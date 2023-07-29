@@ -33,7 +33,7 @@ public:
         LFlag mOffset{};
         struct UniqueComparer {
             bool operator()(const std::unique_ptr<BaseClassInfo>& left, const std::unique_ptr<BaseClassInfo>& right) const {
-                return left->mOffset > right->mOffset;
+                return left->mOffset < right->mOffset;
             }
         };
     };
