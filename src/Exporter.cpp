@@ -35,7 +35,10 @@ int main(int argc, char* argv[]) {
         .help("Export all virtual function information from the ELF file.")
         .default_value(false)
         .implicit_value(true);
-
+    program.add_argument("--dump-segment")
+        .help("Save the .data.rel.ro segment as segment.dump.")
+        .default_value(false)
+        .implicit_value(true);
 
     try {
         program.parse_args(argc, argv);
@@ -61,6 +64,7 @@ int main(int argc, char* argv[]) {
     Loader::ExportVTableArguments args;
     args.mRTTI = program["--export-rtti"] == true;
     args.mVTable = program["--export-vtable"] == true;
+    args.mDumpSegment = program["--dump-segment"] == true;
 
     Loader::DumpVTableResult dumpVTableResult;
 

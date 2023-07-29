@@ -80,6 +80,7 @@ public:
     struct ExportVTableArguments {
         bool mRTTI{};
         bool mVTable{};
+        bool mDumpSegment{};
     };
 
     explicit Loader(std::string& path)
@@ -103,7 +104,7 @@ private:
 
     [[maybe_unused]] uint64_t _getGapInFront(ELFIO::Elf64_Addr address);
 
-    [[nodiscard]] std::stringstream _rebuildRelativeData(ELFIO::section* relroSection);
+    [[nodiscard]] std::stringstream _rebuildRelativeData(ELFIO::section* relroSection, bool saveDump = false);
 
     [[nodiscard]] ELFIO::Elf64_Addr _getEndOfSectionAddress();
 

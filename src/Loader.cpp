@@ -28,8 +28,8 @@ Loader::DumpVTableResult Loader::dumpVTable(ExportVTableArguments args) {
     }
     std::stringstream relroData(std::string(relro->get_data(), relro->get_size()));
     if (IsAllBytesZero(relroData, 0xF)) {
-        spdlog::info("Target image need to rebuild '.data.rel.ro', please wait...");
-        relroData = _rebuildRelativeData(relro);
+        spdlog::info("Target image needs to rebuild '.data.rel.ro', please wait...");
+        relroData = _rebuildRelativeData(relro, args.mDumpSegment);
         if (!relroData.good()) {
             return { DumpVTableResult::RebuildRelativeReadOnlyDataFailed };
         }
@@ -64,7 +64,7 @@ Loader::DumpSymbolResult Loader::dumpSymbols() {
     return {};
 }
 
-std::stringstream Loader::_rebuildRelativeData(ELFIO::section* relroSection) {
+std::stringstream Loader::_rebuildRelativeData(ELFIO::section* relroSection, bool saveDump) {
 #define ReplaceBytes(value, length)         buffer.seekp(RA); \
                                             buffer.write(UInt64ToByteSequence((value)).data(), (length))
     // ELF for the AArch64 Reference:
@@ -146,9 +146,11 @@ std::stringstream Loader::_rebuildRelativeData(ELFIO::section* relroSection) {
             spdlog::warn("Get RELA entry {} failed!", i);
         }
     }
-    std::ofstream dumper("segment.dump", std::ios::binary);
-    dumper << buffer.rdbuf();
-    dumper.close();
+    if (saveDump) {
+        std::ofstream dumper("segment.dump", std::ios::binary);
+        dumper << buffer.rdbuf();
+        dumper.close();
+    }
     return buffer;
 }
 
