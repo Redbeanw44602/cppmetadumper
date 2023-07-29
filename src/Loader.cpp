@@ -78,10 +78,9 @@ Loader::DumpSymbolResult Loader::dumpSymbols() {
 }
 
 std::stringstream Loader::_rebuildRelativeData(ELFIO::section* relroSection, bool saveDump) {
-#define ReplaceBytes(value, length)         buffer.seekp(RA); \
-                                            buffer.write(UInt64ToByteSequence((value)).data(), (length))
-    // ELF for the AArch64 Reference:
+    // Reference:
     // https://github.com/ARM-software/abi-aa/releases/download/2023Q1/aaelf64.pdf
+    // https://refspecs.linuxfoundation.org/elf/elf.pdf
 
     using namespace ELFIO;
     auto relaSection = _getSection(SHT_RELA);
@@ -95,6 +94,10 @@ std::stringstream Loader::_rebuildRelativeData(ELFIO::section* relroSection, boo
     auto relroData = relroSection->get_data();
 
     std::stringstream buffer(std::string(relroData, relroSection->get_size()));
+    auto ReplaceBytes = [&](Elf64_Addr addr, uint64_t value, uint32_t length) {
+        buffer.seekp((int64_t)addr);
+        buffer.write(UInt64ToByteSequence(value).data(), length);
+    };
 
     for (unsigned int i = 0; i < relaTab.get_entries_num(); ++i) {
         Elf64_Addr  offset;
@@ -109,6 +112,7 @@ std::stringstream Loader::_rebuildRelativeData(ELFIO::section* relroSection, boo
             }
             auto RA = offset - relroBegin;
             switch (relocType) {
+                case R_X86_64_64:
                 case R_AARCH64_ABS64: {
                     symbol_section_accessor relaDynSymbols(mImage, mImage.sections[relaSection->get_link()]);
                     std::string     rName;
@@ -121,38 +125,29 @@ std::stringstream Loader::_rebuildRelativeData(ELFIO::section* relroSection, boo
                     relaDynSymbols.get_symbol(symbol, rName, rValue, rSize, rBind, rType, rSectionIndex, rOther);
                     if (rValue) {
                         // internal.
-                        ReplaceBytes(rValue + addend, 8);
+                        ReplaceBytes(RA, rValue + addend, 8);
                     } else {
                         // external.
                         // fixme: Deviations may occur, although, this does not affect data export.
-                        ReplaceBytes(mEndOfSection + (symbol - 1) * 0x8 + addend, 8);
+                        ReplaceBytes(RA, mEndOfSection + (symbol - 1) * 0x8 + addend, 8);
                     }
                     break;
                 }
+                case R_X86_64_RELATIVE:
                 case R_AARCH64_RELATIVE: {
                     if (!symbol) {
                         if (!addend) {
                             spdlog::warn("Unknown type of ADDEND detected.");
                         }
-                        ReplaceBytes(addend, 8);
+                        ReplaceBytes(RA, addend, 8);
                     } else {
                         spdlog::warn("Unhandled type of RELATIVE detected.");
                         // unhandled?
                     }
                     break;
                 }
-                case R_AARCH64_GLOB_DAT:
-                case R_AARCH64_COPY:
-                case R_AARCH64_JUMP_SLOT:
-                case R_AARCH64_TLS_IMPDEF1:
-                case R_AARCH64_TLS_IMPDEF2:
-                case R_AARCH64_TLS_TPREL:
-                case R_AARCH64_TLSDESC:
-                case R_AARCH64_IRELATIVE:
-                    spdlog::warn("Unhandled relocation type: {}.", relocType);
-                    break;
                 default:
-                    spdlog::warn("Unrecognized relocation type: {}.", relocType);
+                    spdlog::warn("Unhandled relocation type: {}.", relocType);
                     break;
             }
         } else {

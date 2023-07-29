@@ -10,10 +10,6 @@
 #include <set>
 #include <elfio/elfio.hpp>
 
-constexpr unsigned R_AARCH64_TLS_IMPDEF1        = 1028;
-constexpr unsigned R_AARCH64_TLS_IMPDEF2        = 1029;
-constexpr unsigned R_AARCH64_IRELATIVE          = 1032;
-
 class Loader {
 public:
 
