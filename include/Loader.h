@@ -55,7 +55,8 @@ public:
         enum {
             Ok,
             OpenFileFailed,
-            FailToParse
+            FailToParse,
+            UnsupportedArchitecture
         } mResult;
         [[nodiscard]] std::string getErrorMsg() const;
     };

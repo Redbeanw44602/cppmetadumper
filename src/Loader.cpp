@@ -10,15 +10,28 @@ Loader::~Loader() {
 }
 
 Loader::LoadResult Loader::load() {
+    using namespace ELFIO;
     mFileStream.open(mPath, std::ios::binary);
-    if (mFileStream.is_open()) {
-        if (mImage.load(mFileStream)) {
-            mEndOfSection = _getEndOfSectionAddress();
-            return { LoadResult::Ok };
-        }
+    if (!mFileStream.is_open()) {
+        return { LoadResult::OpenFileFailed };
+    }
+    if (!mImage.load(mFileStream)) {
         return { LoadResult::FailToParse };
     }
-    return { LoadResult::OpenFileFailed };
+    mEndOfSection = _getEndOfSectionAddress();
+    std::string archName;
+    switch (mImage.get_machine()) {
+        case EM_X86_64:
+            archName = "X86_64";
+            break;
+        case EM_AARCH64:
+            archName = "AArch64";
+            break;
+        default:
+            return { LoadResult::UnsupportedArchitecture };
+    }
+    spdlog::info("Image architecture: {}.", archName);
+    return { LoadResult::Ok };
 }
 
 Loader::DumpVTableResult Loader::dumpVTable(ExportVTableArguments args) {
@@ -322,6 +335,8 @@ std::string Loader::LoadResult::getErrorMsg() const {
             return "Failed to open the file, please check if the file exists and can be read.";
         case FailToParse:
             return "Could not read file as a valid ELF file.";
+        case UnsupportedArchitecture:
+            return "Sorry, the architecture of this file is not supported at this time.";
         default:
             return "An unknown error has occurred.";
     }
