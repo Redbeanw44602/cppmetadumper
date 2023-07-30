@@ -39,6 +39,10 @@ int main(int argc, char* argv[]) {
         .help("Save the .data.rel.ro segment as segment.dump.")
         .default_value(false)
         .implicit_value(true);
+    program.add_argument("--no-rva")
+        .help("I don't care about the RVA data for that image.")
+        .default_value(false)
+        .implicit_value(true);
 
     try {
         program.parse_args(argc, argv);
@@ -83,21 +87,27 @@ int main(int argc, char* argv[]) {
         json data;
         for (auto& i : dumpVTableResult.mRTTI) {
             auto& item = i.second;
+            if (item.mName.empty()) {
+                spdlog::warn("RTTI: rva {:#x} no symbol!", item.mAddress);
+                continue;
+            }
             data[item.mName] = {
-                    {"rva", item.mAddress},
                     {"attribute", item.mAttribute},
                     {"inherit_type", item.mInherit},
                     {"weak", item.mWeak}
             };
+            if (program["--no-rva"] == false) {
+                data[item.mName]["rva"] = item.mAddress;
+            }
             if (item.mInherit == Loader::InheritType::Single
                 || item.mInherit == Loader::InheritType::Multiple) {
                 auto index = 0;
                 data[item.mName]["parents"] = json::array();
                 for (auto& j : item.mParents) {
-                    data[item.mName]["parents"][index]["name"] = j->mName;
+                    data[item.mName]["parents"][index]["name"] = j.mName;
                     if (item.mInherit == Loader::InheritType::Multiple) {
-                        data[item.mName]["parents"][index]["offset"] = j->mOffset;
-                        data[item.mName]["parents"][index]["mask"] = j->mMask;
+                        data[item.mName]["parents"][index]["offset"] = j.mOffset;
+                        data[item.mName]["parents"][index]["mask"] = j.mMask;
                     }
                     index++;
                 }
@@ -105,6 +115,45 @@ int main(int argc, char* argv[]) {
         }
 
         std::ofstream ofs(output + ".rtti.json", std::ios::out);
+        if (!ofs.is_open()) {
+            spdlog::error("Unable to open saving file!");
+            return -1;
+        }
+
+        try {
+            ofs << data.dump(4);
+        } catch(const std::exception& e) {
+            spdlog::error(e.what());
+        }
+        ofs.close();
+    }
+
+    if (args.mVTable) {
+        spdlog::info("Building json result (VTable)...");
+        json data;
+        for (auto& i : dumpVTableResult.mVTable) {
+            auto& table = i.second;
+            if (!data.contains(table.mName)) {
+                data[table.mName] = json::array();
+            }
+            auto entries = json::array();
+            for (auto& j : table.mEntries) {
+                if (program["--no-rva"] == false) {
+                    entries.emplace_back(json {
+                            {"name", j.mName},
+                            {"rva", j.mAddress}
+                    });
+                } else {
+                    entries.emplace_back(j.mName);
+                }
+            }
+            data[table.mName].emplace_back(json {
+                    {"offset", table.mOffset},
+                    {"entries", entries}
+            });
+        }
+
+        std::ofstream ofs(output + ".vtable.json", std::ios::out);
         if (!ofs.is_open()) {
             spdlog::error("Unable to open saving file!");
             return -1;

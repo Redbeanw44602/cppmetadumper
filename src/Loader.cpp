@@ -5,12 +5,13 @@
 #include "Loader.h"
 #include "Utils.h"
 
+using namespace ELFIO;
+
 Loader::~Loader() {
     mFileStream.close();
 }
 
 Loader::LoadResult Loader::load() {
-    using namespace ELFIO;
     mFileStream.open(mPath, std::ios::binary);
     if (!mFileStream.is_open()) {
         return { LoadResult::OpenFileFailed };
@@ -30,12 +31,21 @@ Loader::LoadResult Loader::load() {
         default:
             return { LoadResult::UnsupportedArchitecture };
     }
+    for (auto& sec : mImage.sections) {
+        if (sec->get_name() == ".data.rel.ro") {
+            mPreparedSections.mRELRO = sec.get();
+        } else if (sec->get_name() == ".rela.dyn") {
+            mPreparedSections.mRELA = sec.get();
+        } else if (sec->get_name() == ".symtab") {
+            mPreparedSections.mSYMTAB = sec.get();
+        }
+    }
     spdlog::info("Image architecture: {}.", archName);
     return { LoadResult::Ok };
 }
 
 Loader::DumpVTableResult Loader::dumpVTable(ExportVTableArguments args) {
-    auto relro = _getSection(".data.rel.ro");
+    auto relro = mPreparedSections.mRELRO;
     if (!relro) {
         return { DumpVTableResult::SectionNotFound };
     }
@@ -49,26 +59,25 @@ Loader::DumpVTableResult Loader::dumpVTable(ExportVTableArguments args) {
     }
     auto relroAddr = relro->get_address();
     auto relroSize = relro->get_size();
-    auto rtti = args.mRTTI ? _getRTTIStarts() : (WholeRTTIMap {});
+    spdlog::info("Processing data...");
+    auto rtti = _getRTTIStarts();
+    auto vtable = _getVTableStarts();
+    auto symCache = _buildSymbolCache();
     for (auto current = relroAddr; current < relroAddr + relroSize; ) {
-        if (args.mRTTI) {
-            if (rtti.contains(current)) {
-                current += _readOneRTTI(relroData, relroAddr, current, rtti);
-                continue;
-            }
+        if (args.mRTTI && rtti.contains(current)) {
+            current += _readOneRTTI(relroData, relroAddr, current, rtti);
+            continue;
         }
-        if (args.mVTable) {
-            if (IsAllBytesZero(relroData, 8, (int64_t)(current - relroAddr))) {
-                // todo.
-                current += 8;
-                continue;
-            }
+        if (args.mVTable && vtable.contains(current)) {
+            current += _readOneVTable(relroData, relroAddr, current, rtti, symCache, vtable);
+            continue;
         }
-        current += 8; // default.
+        current += 8; // unknown?
     }
     return {
         DumpVTableResult::Ok,
-        std::move(rtti)
+        rtti,
+        vtable
     };
 }
 
@@ -82,8 +91,7 @@ std::stringstream Loader::_rebuildRelativeData(ELFIO::section* relroSection, boo
     // https://github.com/ARM-software/abi-aa/releases/download/2023Q1/aaelf64.pdf
     // https://refspecs.linuxfoundation.org/elf/elf.pdf
 
-    using namespace ELFIO;
-    auto relaSection = _getSection(SHT_RELA);
+    auto relaSection = mPreparedSections.mRELA;
     if (!relaSection) return {};
 
     spdlog::info("Get section linked to RELA '{}'.", relaSection->get_name());
@@ -162,6 +170,42 @@ std::stringstream Loader::_rebuildRelativeData(ELFIO::section* relroSection, boo
     return buffer;
 }
 
+Loader::SymbolCache Loader::_buildSymbolCache() {
+    SymbolCache ret;
+    if (mPreparedSections.mSYMTAB) {
+        symbol_section_accessor accessor(mImage, mPreparedSections.mSYMTAB);
+        for (Elf_Xword i = 0; i < accessor.get_symbols_num(); ++i) {
+            std::string     name;
+            Elf64_Addr      value;
+            Elf_Xword       size;
+            unsigned char   bind;
+            unsigned char   type;
+            Elf_Half        sectionIndex;
+            unsigned char   other;
+            accessor.get_symbol(i, name, value, size, bind, type, sectionIndex, other);
+            if (!name.empty()) {
+                ret.mByValue.emplace(value, name);
+            }
+        }
+    }
+    if (mPreparedSections.mRELA) {
+        const relocation_section_accessor accessor(mImage, mPreparedSections.mRELA);
+        for (unsigned int i = 0; i < accessor.get_entries_num(); ++i) {
+            Elf64_Addr      offset;
+            Elf64_Addr      symbolValue;
+            std::string     symbolName;
+            unsigned        type;
+            Elf_Sxword      addend;
+            Elf_Sxword      calcValue;
+            accessor.get_entry(i, offset, symbolValue, symbolName, type, addend, calcValue);
+            if (!symbolName.empty()) {
+                ret.mByAddress.emplace(offset, symbolName);
+            }
+        }
+    }
+    return ret;
+}
+
 [[maybe_unused]] uint64_t Loader::_getGapInFront(ELFIO::Elf64_Addr address) {
     const uint32_t LOAD = 1;
     uint64_t gap = 0;
@@ -193,27 +237,8 @@ ELFIO::Elf64_Addr Loader::_getEndOfSectionAddress() {
     return ret;
 }
 
-ELFIO::section* Loader::_getSection(const std::string& name) {
-    for (auto& sec : mImage.sections) {
-        if (sec->get_name() == name) {
-            return sec.get();
-        }
-    }
-    return nullptr;
-}
-
-ELFIO::section *Loader::_getSection(ELFIO::Elf_Word type) {
-    for (auto& sec : mImage.sections) {
-        if (sec->get_type() == type) {
-            return sec.get();
-        }
-    }
-    return nullptr;
-}
-
 Loader::WholeRTTIMap Loader::_getRTTIStarts() {
-    using namespace ELFIO;
-    auto relaSection = _getSection(SHT_RELA);
+    auto relaSection = mPreparedSections.mRELA;
     if (!relaSection) return {};
 
     const relocation_section_accessor relaTab(mImage, relaSection);
@@ -242,41 +267,53 @@ Loader::WholeRTTIMap Loader::_getRTTIStarts() {
     return ret;
 }
 
+Loader::WholeVTableMap Loader::_getVTableStarts() {
+    auto symSection = mPreparedSections.mSYMTAB;
+    if (!symSection) return {};
+
+    const symbol_section_accessor symTab(mImage, symSection);
+    WholeVTableMap ret;
+    for (unsigned int i = 0; i < symTab.get_symbols_num(); ++i) {
+        std::string     name;
+        Elf64_Addr      value;
+        Elf_Xword       size;
+        unsigned char   bind;
+        unsigned char   type;
+        Elf_Half        sectionIndex;
+        unsigned char   other;
+        symTab.get_symbol(i, name, value, size, bind, type, sectionIndex, other);
+        if (name.starts_with("_ZTV")) {
+            ret.try_emplace(value, name);
+        }
+    }
+    return ret;
+}
+
 uint64_t Loader::_readOneRTTI(std::stringstream& relroData, uint64_t relroBase, ELFIO::Elf64_Addr starts, WholeRTTIMap& allRttiInfo) {
+    // 'attribute' reference:
+    // https://itanium-cxx-abi.github.io/cxx-abi/abi.html#rtti-layout
+
     if (!allRttiInfo.contains(starts)) {
         return 0;
     }
     auto& ins = allRttiInfo.at(starts);
     unsigned char buffer[8]; // tmp
-    auto readOneTypeName = [&](ELFIO::Elf64_Addr begin, bool keepPtrPos = false) -> std::string {
-        std::streampos cur;
-        if (keepPtrPos) cur = relroData.tellg();
-        relroData.clear();
-        relroData.seekg((int64_t)(begin - relroBase + 8)); // ignore top pointer.
-        relroData.read((char*)buffer, 8); // read type name
-        std::string ret;
-        _readCString((int64_t) FromBytes<uint64_t>(buffer), ret);
-        if (keepPtrPos) relroData.seekg(cur);
-        return ret;
-    };
-    ins.mName = readOneTypeName(starts);
-    // 'attribute' reference:
-    // https://itanium-cxx-abi.github.io/cxx-abi/abi.html#rtti-layout
+    ins.mName = _readOneTypeName(relroData, relroBase, starts);
     switch (ins.mInherit) {
         case None:
             // done.
             break;
         case Single: {
             relroData.read((char*)buffer, 8);
-            auto base = std::make_unique<BaseClassInfo>();
+            BaseClassInfo base;
             auto strAddr = FromBytes<uint64_t>(buffer);
             if (strAddr >= mEndOfSection) {
                 ins.mWeak = true;
                 break;
             }
-            base->mName = readOneTypeName(strAddr, true);
-            base->mOffset = 0x0;
-            ins.mParents.emplace(std::move(base));
+            base.mName = _readOneTypeName(relroData, relroBase, strAddr, true);
+            base.mOffset = 0x0;
+            ins.mParents.emplace(base);
             break;
         }
         case Multiple: {
@@ -286,18 +323,18 @@ uint64_t Loader::_readOneRTTI(std::stringstream& relroData, uint64_t relroBase, 
             auto baseClassCount = FromBytes<int32_t>(buffer);
             for (int32_t i = 0; i < baseClassCount; i++) {
                 relroData.read((char*)buffer, 8); // read base class' type name.
-                auto base = std::make_unique<BaseClassInfo>();
+                BaseClassInfo base;
                 auto strAddr = FromBytes<uint64_t>(buffer);
                 if (strAddr >= mEndOfSection) {
                     ins.mWeak = true;
                     break;
                 }
-                base->mName = readOneTypeName(strAddr, true);
+                base.mName = _readOneTypeName(relroData, relroBase, strAddr, true);
                 relroData.read((char*)buffer, 8); // read base class' attributes
                 auto attribute = FromBytes<Flag>(buffer);
-                base->mOffset = (attribute >> 8) & 0xFF;
-                base->mMask = attribute & 0xFF;
-                ins.mParents.emplace(std::move(base));
+                base.mOffset = (attribute >> 8) & 0xFF;
+                base.mMask = attribute & 0xFF;
+                ins.mParents.emplace(base);
             }
             break;
         }
@@ -306,6 +343,74 @@ uint64_t Loader::_readOneRTTI(std::stringstream& relroData, uint64_t relroBase, 
             break;
     }
     return (uint64_t)relroData.tellg() - (starts - relroBase);
+}
+
+uint64_t Loader::_readOneVTable(std::stringstream& relroData, uint64_t relroBase, ELFIO::Elf64_Addr starts, WholeRTTIMap& allRttiInfo, const SymbolCache& symCache, WholeVTableMap& allVTableInfo) {
+    //if (starts == 0x742DA60) {
+    //    __debugbreak();
+    //}
+    if (!allVTableInfo.contains(starts)) {
+        return 0;
+    }
+    relroData.clear();
+    relroData.seekg((int64_t)(starts - relroBase));
+    unsigned char buffer[8]; // tmp
+    std::vector<Elf64_Addr> created; // used to rollback.
+    created.emplace_back(starts);
+    uint32_t idx = 0;
+    auto getSymbol = [&](uint64_t value, Elf64_Addr addr) -> std::string {
+        if (symCache.mByAddress.contains(addr)) {
+            return symCache.mByAddress.at(addr);
+        }
+        if (symCache.mByValue.contains(value)) {
+            return symCache.mByValue.at(value);
+        }
+        return {};
+    };
+    bool offsetValid = false;
+    while (true) {
+        auto RA = relroBase + relroData.tellg();
+        if (idx && (allVTableInfo.contains(RA) || allRttiInfo.contains(RA))) {
+            break; // completed.
+        }
+        idx++;
+        relroData.read((char*)buffer, 8);
+        auto value = FromBytes<int64_t>(buffer);
+        if (value <= 0) { // offset to this
+            if (offsetValid && value >= allVTableInfo.at(starts).mOffset) {
+                relroData.seekg(-8, std::ios::cur);
+                // fixme: Align what???
+                // spdlog::warn("unknown align at {:#x} ignored.", RA);
+                break;
+            }
+            relroData.read((char*)buffer, 8);
+            auto addr = FromBytes<int64_t>(buffer);
+            auto sym = getSymbol(addr, RA);
+            if (sym.empty() || !sym.starts_with("_ZTI")) break;
+            if (value != 0) {
+                allVTableInfo.try_emplace(RA, sym);
+                starts = RA;
+                created.emplace_back(RA);
+            } else {
+                allVTableInfo.at(starts).mName = sym;
+            }
+            allVTableInfo.at(starts).mOffset = value;
+            offsetValid = true;
+            continue;
+        }
+        auto sym = getSymbol(value, RA);
+        if (!sym.empty()) {
+            if (sym.starts_with("_ZTV")) break; // unfiltered.
+            allVTableInfo.at(starts).mEntries.emplace(idx, value, sym);
+        } else {
+            spdlog::warn("Fail to parse vtable: {}({:#x}).", allVTableInfo.at(starts).mName, RA);
+            for (auto& i : created) { // erase and rollback
+                allVTableInfo.erase(i);
+            }
+            return 0;
+        }
+    }
+    return relroBase + (uint64_t)relroData.tellg() - starts;
 }
 
 void Loader::_readCString(int64_t begin, std::string& result) {
@@ -320,6 +425,19 @@ void Loader::_readCString(int64_t begin, std::string& result) {
         }
         result += chr;
     }
+}
+
+std::string Loader::_readOneTypeName(std::stringstream &relroData, uint64_t relroBase, ELFIO::Elf64_Addr begin, bool keepPtrPos) {
+    std::streampos cur;
+    if (keepPtrPos) cur = relroData.tellg();
+    relroData.clear();
+    relroData.seekg((int64_t)(begin + 8 - relroBase)); // ignore top pointer.
+    unsigned char buffer[8]; // tmp
+    relroData.read((char*)buffer, 8); // read type name
+    std::string ret;
+    _readCString((int64_t) FromBytes<uint64_t>(buffer), ret);
+    if (keepPtrPos) relroData.seekg(cur);
+    return ret;
 }
 
 std::string Loader::LoadResult::getErrorMsg() const {
