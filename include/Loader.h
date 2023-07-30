@@ -89,6 +89,7 @@ public:
             Ok,
             SectionNotFound,
             RebuildRelativeReadOnlyDataFailed,
+            NoSymTab
         } mResult;
         WholeRTTIMap mRTTI;
         WholeVTableMap mVTable;

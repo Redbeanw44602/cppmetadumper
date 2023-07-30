@@ -63,6 +63,9 @@ Loader::DumpVTableResult Loader::dumpVTable(ExportVTableArguments args) {
     auto rtti = _getRTTIStarts();
     auto vtable = _getVTableStarts();
     auto symCache = _buildSymbolCache();
+    if (args.mVTable && (vtable.empty() || symCache.mByAddress.empty() || symCache.mByValue.empty())) {
+        return { DumpVTableResult::NoSymTab };
+    }
     for (auto current = relroAddr; current < relroAddr + relroSize; ) {
         if (args.mRTTI && rtti.contains(current)) {
             current += _readOneRTTI(relroData, relroAddr, current, rtti);
@@ -463,6 +466,8 @@ std::string Loader::DumpVTableResult::getErrorMsg() const {
             return "Could not find necessary segment in ELF file (.data.rel.ro/.dynsym).";
         case RebuildRelativeReadOnlyDataFailed:
             return "Rebuilding relative read-only data failed!";
+        case NoSymTab:
+            return "Target image lacks symbol information needed to export vtables.";
         default:
             return "An unknown error has occurred.";
     }
