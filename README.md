@@ -28,7 +28,7 @@ The resulting will be saved in JSON format.
  - Export RTTI perfectly.
 
 ## Limitation
- - Supported platforms: `AArch64`, `Intel X86_64`.
+ - Supported platforms: `AArch64`, `X86_64`.
  - Exporting a virtual function table requires a symbol table (`.symtab`).
  - If you need to export RTTI, make sure the target binary was compiled without `-fno-rtti`.
  - (bug) **If your file requires to rebuilt data.rel.ro, then the RVA of the external symbol may be wrong.** This problem affects the export results of VTable, but not RTTI.
