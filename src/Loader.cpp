@@ -61,6 +61,9 @@ Loader::DumpVTableResult Loader::dumpVTable(ExportVTableArguments args) {
     auto relroSize = relro->get_size();
     spdlog::info("Processing data...");
     auto rtti = _getRTTIStarts();
+    if (args.mRTTI && rtti.empty()) {
+        return { DumpVTableResult::MissingRtti };
+    }
     auto vtable = _getVTableStarts();
     auto symCache = _buildSymbolCache();
     if (args.mVTable && (vtable.empty() || symCache.mByAddress.empty() || symCache.mByValue.empty())) {
@@ -241,11 +244,12 @@ ELFIO::Elf64_Addr Loader::_getEndOfSectionAddress() {
 }
 
 Loader::WholeRTTIMap Loader::_getRTTIStarts() {
-    auto relaSection = mPreparedSections.mRELA;
-    if (!relaSection) return {};
+    if (!mPreparedSections.mRELA) return {};
 
-    const relocation_section_accessor relaTab(mImage, relaSection);
+    const relocation_section_accessor relaTab(mImage, mPreparedSections.mRELA);
     WholeRTTIMap ret;
+    auto relroBeg = mPreparedSections.mRELRO->get_address();
+    auto relroEnd = relroBeg + mPreparedSections.mRELRO->get_size();
     for (unsigned int i = 0; i < relaTab.get_entries_num(); ++i) {
         Elf64_Addr      offset;
         Elf64_Addr      symbolValue;
@@ -254,6 +258,7 @@ Loader::WholeRTTIMap Loader::_getRTTIStarts() {
         Elf_Sxword      addend;
         Elf_Sxword      calcValue;
         relaTab.get_entry(i, offset, symbolValue, symbolName, type, addend, calcValue);
+        if (offset < relroBeg || offset > relroEnd) continue;
         switch (H(symbolName.c_str())) {
             case H("_ZTVN10__cxxabiv117__class_type_infoE"):
                 ret.try_emplace(offset, offset, None);
@@ -468,6 +473,8 @@ std::string Loader::DumpVTableResult::getErrorMsg() const {
             return "Rebuilding relative read-only data failed!";
         case NoSymTab:
             return "Target image lacks symbol information needed to export vtables.";
+        case MissingRtti:
+            return "Target image is missing RTTI information, please remove the \"--export-rtti\" parameter.";
         default:
             return "An unknown error has occurred.";
     }
