@@ -1,8 +1,11 @@
 //
-// Created by RedbeanW on 2023/7/27.
+// Created by RedbeanW on 2024/1/19.
 //
 
 #pragma once
+
+#include <spdlog/spdlog.h>
+#include <spdlog/sinks/stdout_color_sinks.h>
 
 #include <string>
 #include <sstream>
