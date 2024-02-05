@@ -6,21 +6,7 @@
 
 #include "Base.h"
 
-#include <elfio/elfio.hpp>
-
-using ELFIO::Elf64_Addr;
-using ELFIO::Elf_Word;
-using ELFIO::Elf_Xword;
-using ELFIO::Elf_Half;
-using ELFIO::Elf_Sxword;
-
 #define READER_UNREACHABLE
-
-enum class Architecture {
-    Unsupported,
-    X86_64,
-    AArch64
-};
 
 struct ReaderState {
     bool mIsValid { true };
@@ -34,25 +20,6 @@ struct ReaderState {
     }
 };
 
-struct Symbol {
-    std::string     mName;
-    Elf64_Addr      mValue;
-    Elf_Xword       mSize;
-    unsigned char   mBind;
-    unsigned char   mType;
-    Elf_Half        mSectionIndex;
-    unsigned char   mOther;
-};
-
-struct Relocation {
-    Elf64_Addr      mOffset;
-    Elf64_Addr      mSymbolValue;
-    std::string     mSymbolName;
-    unsigned        mType;
-    Elf_Sxword      mAddend;
-    Elf_Sxword      mCalcValue;
-};
-
 class Reader {
 public:
 
@@ -62,21 +29,25 @@ public:
 
 protected:
 
-    [[nodiscard]] Elf64_Addr getEndOfSections() const;
-    [[nodiscard]] Architecture getArchitecture() const;
-    [[nodiscard]] uint64_t getGapInFront(Elf64_Addr pAddr) const;
-
     enum RelativePos { Begin, Current, End };
+
+    virtual ptrdiff_t getReadOffset(uintptr_t pAddr) {
+        return 0;
+    };
 
     template <typename T>
     [[nodiscard]] T read() {
         unsigned char buffer[sizeof(T)];
+        auto off = getReadOffset(cur());
+        move(off);
         mStream.read((char*)buffer, sizeof(T));
+        move(-off);
+        mLastOperated = sizeof(T);
         return FromBytes<T>(buffer);
     };
 
     template <typename T, bool KeepOriPos>
-    [[nodiscard]] T read(Elf64_Addr pBegin) {
+    [[nodiscard]] T read(uintptr_t pBegin) {
         if constexpr (KeepOriPos) {
             auto after = cur();
             reset();
@@ -91,10 +62,11 @@ protected:
     template <typename T>
     void write(T pData) {
         mStream.write(reinterpret_cast<char*>(&pData), sizeof(T));
+        mLastOperated = sizeof(T);
     }
 
     template <typename T, bool KeepOriPos>
-    void write(Elf64_Addr pBegin, T pData) {
+    void write(uintptr_t pBegin, T pData) {
         if constexpr (KeepOriPos) {
             auto after = cur();
             reset();
@@ -107,21 +79,17 @@ protected:
     }
 
     std::string readCString(size_t pMaxLength);
-    std::string readCString(Elf64_Addr pAddr, size_t pMaxLength);
+    std::string readCString(uintptr_t pAddr, size_t pMaxLength);
 
-    bool forEachSymbols(ELFIO::section* pSec, const std::function<void(Symbol)>& pCall);
-    bool forEachSymbols(const std::function<void(Symbol)>& pCall);
-
-    bool forEachRelocations(const std::function<void(Relocation)>& pCall);
-
-    std::optional<Symbol> lookupSymbol(Elf64_Addr pAddr);
-    std::optional<Symbol> lookupSymbol(const std::string& pName);
-
-    inline Elf64_Addr cur() {
+    inline uintptr_t cur() {
         return mStream.tellg();
     }
 
-    inline bool move(Elf64_Addr pPos, RelativePos pRel = Current) {
+    inline uintptr_t last() {
+        return cur() - mLastOperated;
+    }
+
+    inline bool move(int64_t pPos, RelativePos pRel = Current) {
         mStream.seekp(pPos, (int)pRel);
         mStream.seekg(pPos, (int)pRel);
         return mStream.good();
@@ -135,11 +103,8 @@ protected:
 
 private:
 
-    ELFIO::section* _fetchSection(const char* pSecName);
-
-    void _relocateReadonlyData();
-
     std::stringstream mStream;
-    ELFIO::elfio mImage;
+
+    uint64_t  mLastOperated {0};
 
 };

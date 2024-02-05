@@ -4,13 +4,58 @@
 
 #pragma once
 
-#include "Reader.h"
+#include "ElfReader.h"
 
 #include <unordered_set>
 #include <map>
 
-struct RTTI {
+enum class TypeInheritKind {
+    None,
+    Single,
+    Multiple
+};
 
+struct TypeInfo {
+    std::string mName; // _ZTI...
+    [[nodiscard]] virtual TypeInheritKind kind() const = 0;
+};
+
+struct NoneInheritTypeInfo : public TypeInfo {
+    using TypeInfo::TypeInfo;
+    [[nodiscard]] TypeInheritKind kind() const override {
+        return TypeInheritKind::None;
+    };
+};
+
+struct SingleInheritTypeInfo : public TypeInfo {
+    using TypeInfo::TypeInfo;
+    [[nodiscard]] TypeInheritKind kind() const override {
+        return TypeInheritKind::Single;
+    };
+    std::string mParentType; // _ZTI...
+    //bool mIsWeak;
+    ptrdiff_t mOffset;
+};
+
+struct BaseClassInfo {
+    enum Mask {
+        Virtual = 0x1,
+        Public  = 0x2,
+        Offset  = 0x8
+    };
+    std::string mName; // _ZTI...
+    ptrdiff_t mOffset;
+    unsigned int mMask;
+};
+
+struct MultipleInheritTypeInfo : public TypeInfo {
+    using TypeInfo::TypeInfo;
+    [[nodiscard]] TypeInheritKind kind() const override {
+        return TypeInheritKind::Multiple;
+    };
+    unsigned int mAttribute;
+    //bool mIsWeak;
+    std::vector<BaseClassInfo> mBaseClasses;
 };
 
 struct VTableColumn {
@@ -19,21 +64,31 @@ struct VTableColumn {
 };
 
 struct VTable {
-    std::string mName;
-    std::map<ptrdiff_t, std::vector<VTableColumn>> mSubTables;
-    std::optional<RTTI> mRTTI;
+    std::string mName; // _ZTV...
+    std::optional<std::string> mTypeName; // _ZTI...
+    std::map<ptrdiff_t, std::vector<VTableColumn>, std::greater<>> mSubTables;
 };
 
-class VTableReader : private Reader {
+struct DumpVTableResult {
+    unsigned int mUnparsedVFTableCount;
+    unsigned int mUnparsedTypeInfoCount;
+    std::vector<VTable> mVFTable;
+    std::vector<std::unique_ptr<TypeInfo>> mTypeInfo;
+};
+
+class VTableReader : private ElfReader {
 public:
 
     explicit VTableReader(const std::string& pPath);
 
-    std::vector<VTable> dumpVTable();
+    DumpVTableResult dumpVTable();
 
-    VTable readVTable(bool pIsSubRead = false);
+    std::optional<VTable> readVTable();
 
-    std::optional<RTTI> parseRTTI();
+    std::unique_ptr<TypeInfo> readTypeInfo();
+
+    static void printDebugString(const VTable& pTable);
+    static void printDebugString(const std::unique_ptr<TypeInfo>& pType);
 
 private:
 
@@ -41,6 +96,8 @@ private:
 
     struct PreparedData {
         std::unordered_set<Elf64_Addr> mVTableBegins;
+        std::unordered_set<Elf64_Addr> mTypeInfoBegins;
+        std::unordered_set<Elf64_Addr> mLambdaBegins;
     } mPrepared;
 
 };
