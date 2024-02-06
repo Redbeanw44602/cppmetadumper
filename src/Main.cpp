@@ -43,11 +43,11 @@ int main(int argc, char* argv[]) {
     if (!reader.isValid()) {
         return 1;
     }
-    auto result = reader.dumpVTable();
 
-    // vt: toJson
-    JSON jsonVt;
-    for (auto& i : result.mVFTable) {
+    // Virtual Functions
+    JSON jsonVft;
+    auto resultVft = reader.dumpVFTable();
+    for (auto& i : resultVft.mVFTable) {
         auto subTables = JSON::array();
         for (auto& j : i.mSubTables) {
             auto entities = JSON::array();
@@ -62,31 +62,33 @@ int main(int argc, char* argv[]) {
                 {"entities", entities}
             });
         }
-        jsonVt[i.mName] = JSON {
+        jsonVft[i.mName] = JSON {
             {"sub_tables", subTables}
         };
         if (i.mTypeName) {
-            jsonVt[i.mName]["type_name"] = *i.mTypeName;
+            jsonVft[i.mName]["type_name"] = *i.mTypeName;
         } else {
-            jsonVt[i.mName]["type_name"] = {};
+            jsonVft[i.mName]["type_name"] = {};
         }
     }
+    spdlog::info("Parsed vftable(s): {}/{}({:.4}%)", resultVft.mParsed, resultVft.mTotal, ((double)resultVft.mParsed / (double)resultVft.mTotal) * 100.0);
 
-    // tp: toJson
-    JSON jsonTp;
-    for (auto& type : result.mTypeInfo) {
+    // TypeInfos
+    JSON jsonTyp;
+    auto resultTyp = reader.dumpTypeInfo();
+    for (auto& type : resultTyp.mTypeInfo) {
         if (!type) continue;
         switch (type->kind()) {
         case TypeInheritKind::None: {
             auto typeInfo = (NoneInheritTypeInfo*)type.get();
-            jsonTp[typeInfo->mName] = {
+            jsonTyp[typeInfo->mName] = {
                 {"inherit_type", "None"}
             };
             break;
         }
         case TypeInheritKind::Single: {
             auto typeInfo = (SingleInheritTypeInfo*)type.get();
-            jsonTp[typeInfo->mName] = {
+            jsonTyp[typeInfo->mName] = {
                 {"inherit_type", "Single"},
                 {"parent_type", typeInfo->mParentType},
                 {"offset", typeInfo->mOffset}
@@ -103,7 +105,7 @@ int main(int argc, char* argv[]) {
                     {"mask", base.mMask}
                 });
             }
-            jsonTp[typeInfo->mName] = {
+            jsonTyp[typeInfo->mName] = {
                 {"inherit_type", "Multiple"},
                 {"attribute", typeInfo->mAttribute},
                 {"base_classes", baseClasses}
@@ -112,14 +114,16 @@ int main(int argc, char* argv[]) {
         }
         }
     }
+    spdlog::info("Parsed typeinfo(s): {}/{}({:.4}%)", resultTyp.mParsed, resultTyp.mTotal, ((double)resultTyp.mParsed / (double)resultTyp.mTotal) * 100.0);
 
     std::ofstream file(output, std::ios::trunc);
     if (file.is_open()) {
         file << JSON {
-            {"vtable", jsonVt},
-            {"typeinfo", jsonTp}
+            {"vtable", jsonVft},
+            {"typeinfo", jsonTyp}
         }.dump(4);
         file.close();
+        spdlog::info("Results have been saved to: {}", output);
     } else {
         spdlog::error("Failed to open file!");
         return 1;

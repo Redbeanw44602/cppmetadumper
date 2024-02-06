@@ -8,25 +8,16 @@ VTableReader::VTableReader(const std::string& pPath) : ElfReader(pPath) {
     _prepareData();
 }
 
-DumpVTableResult VTableReader::dumpVTable() {
+DumpVFTableResult VTableReader::dumpVFTable() {
 #if 1
-    DumpVTableResult result;
+    DumpVFTableResult result;
     for (auto& addr : mPrepared.mVTableBegins) {
         move(addr, Begin);
         auto vt = readVTable();
+        result.mTotal++;
         if (vt) {
             result.mVFTable.emplace_back(*vt);
-        } else {
-            result.mUnparsedVFTableCount++;
-        }
-    }
-    for (auto& addr : mPrepared.mTypeInfoBegins) {
-        move(addr, Begin);
-        auto type = readTypeInfo();
-        if (type) {
-            result.mTypeInfo.emplace_back(std::move(type));
-        } else {
-            result.mUnparsedTypeInfoCount++;
+            result.mParsed++;
         }
     }
     return result;
@@ -100,6 +91,20 @@ std::optional<VTable> VTableReader::readVTable() {
             return std::nullopt;
         }
         result.mSubTables[offsetToThis].emplace_back(VTableColumn {curSym->mName, curSym->mValue});
+    }
+    return result;
+}
+
+DumpTypeInfoResult VTableReader::dumpTypeInfo() {
+    DumpTypeInfoResult result;
+    for (auto& addr : mPrepared.mTypeInfoBegins) {
+        move(addr, Begin);
+        auto type = readTypeInfo();
+        result.mTotal++;
+        if (type) {
+            result.mTypeInfo.emplace_back(std::move(type));
+            result.mParsed++;
+        }
     }
     return result;
 }
@@ -192,8 +197,6 @@ void VTableReader::_prepareData() {
     if (!result) {
         spdlog::error("No symbols found in this image!");
         mIsValid = false;
-    } else {
-        spdlog::info("Found {} vtables and {} typeinfo in this image.", mPrepared.mVTableBegins.size(), mPrepared.mTypeInfoBegins.size());
     }
 
 }
@@ -225,3 +228,4 @@ void VTableReader::printDebugString(const std::unique_ptr<TypeInfo>& pType) {
     }
     }
 }
+#define U

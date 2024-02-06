@@ -69,10 +69,15 @@ struct VTable {
     std::map<ptrdiff_t, std::vector<VTableColumn>, std::greater<>> mSubTables;
 };
 
-struct DumpVTableResult {
-    unsigned int mUnparsedVFTableCount;
-    unsigned int mUnparsedTypeInfoCount;
+struct DumpVFTableResult {
+    unsigned int mTotal {0};
+    unsigned int mParsed {0};
     std::vector<VTable> mVFTable;
+};
+
+struct DumpTypeInfoResult {
+    unsigned int mTotal {0};
+    unsigned int mParsed {0};
     std::vector<std::unique_ptr<TypeInfo>> mTypeInfo;
 };
 
@@ -81,10 +86,10 @@ public:
 
     explicit VTableReader(const std::string& pPath);
 
-    DumpVTableResult dumpVTable();
-
+    DumpVFTableResult dumpVFTable();
     std::optional<VTable> readVTable();
 
+    DumpTypeInfoResult dumpTypeInfo();
     std::unique_ptr<TypeInfo> readTypeInfo();
 
     static void printDebugString(const VTable& pTable);
