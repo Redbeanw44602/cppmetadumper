@@ -76,7 +76,7 @@ struct DumpVTableResult {
     std::vector<std::unique_ptr<TypeInfo>> mTypeInfo;
 };
 
-class VTableReader : private ElfReader {
+class VTableReader : public ElfReader {
 public:
 
     explicit VTableReader(const std::string& pPath);

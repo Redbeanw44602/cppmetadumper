@@ -8,24 +8,12 @@
 
 #define READER_UNREACHABLE
 
-struct ReaderState {
-    bool mIsValid { true };
-    std::string mMessage;
-    void setError(std::string pMessage) {
-        mIsValid = false;
-        mMessage = std::move(pMessage);
-    }
-    explicit operator bool() const {
-        return mIsValid;
-    }
-};
-
 class Reader {
 public:
 
     explicit Reader(const std::string& pPath);
 
-    [[nodiscard]] ReaderState getState() const;
+    [[nodiscard]] bool isValid() const;
 
 protected:
 
@@ -37,13 +25,13 @@ protected:
 
     template <typename T>
     [[nodiscard]] T read() {
-        unsigned char buffer[sizeof(T)];
+        T value;
         auto off = getReadOffset(cur());
         move(off);
-        mStream.read((char*)buffer, sizeof(T));
+        mStream.read((char*)&value, sizeof(T));
         move(-off);
         mLastOperated = sizeof(T);
-        return FromBytes<T>(buffer);
+        return value;
     };
 
     template <typename T, bool KeepOriPos>
@@ -99,7 +87,7 @@ protected:
         mStream.clear();
     }
 
-    ReaderState mState;
+    bool mIsValid {true};
 
 private:
 

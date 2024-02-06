@@ -8,7 +8,8 @@ using namespace ELFIO;
 
 ElfReader::ElfReader(const std::string& pPath) : Reader(pPath) {
     if (!mImage.load(pPath)) { // todo: Find better solution.
-        mState.setError("Failed to load elf image.");
+        spdlog::error("Failed to load elf image.");
+        mIsValid = false;
         return;
     }
     _buildSymbolCache();
@@ -132,7 +133,6 @@ section* ElfReader::_fetchSection(const char* pSecName) const {
             return sec.get();
         }
     }
-    spdlog::warn("Failed to fetch section: {}", pSecName);
     return nullptr;
 }
 
@@ -210,8 +210,15 @@ void ElfReader::_relocateReadonlyData() {
 }
 
 void ElfReader::_buildSymbolCache() {
-    forEachSymbols([this](uint64_t index, const Symbol& symbol) {
+
+    if (!mIsValid) return;
+
+    if (!forEachSymbols([this](uint64_t index, const Symbol& symbol) {
         mSymbolCache.mFromName.try_emplace(symbol.mName, index);
         mSymbolCache.mFromValue.try_emplace(symbol.mValue, index);
-    });
+    })) {
+        spdlog::error("No symbols found in this image!");
+        mIsValid = false;
+    }
+
 }

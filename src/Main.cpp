@@ -40,6 +40,9 @@ int main(int argc, char* argv[]) {
     output += ".json";
 
     VTableReader reader(input);
+    if (!reader.isValid()) {
+        return 1;
+    }
     auto result = reader.dumpVTable();
 
     // vt: toJson

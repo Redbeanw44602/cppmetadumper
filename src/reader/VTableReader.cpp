@@ -177,6 +177,8 @@ void VTableReader::printDebugString(const VTable& pTable) {
 
 void VTableReader::_prepareData() {
 
+    if (!mIsValid) return;
+
     auto result = forEachSymbols([this](uint64_t pIndex, const Symbol& pSym) {
         if (pSym.mName.starts_with("_ZTV")) {
             mPrepared.mVTableBegins.emplace(pSym.mValue);
@@ -188,7 +190,8 @@ void VTableReader::_prepareData() {
     });
 
     if (!result) {
-        mState.setError("No symbols found in this image!");
+        spdlog::error("No symbols found in this image!");
+        mIsValid = false;
     } else {
         spdlog::info("Found {} vtables and {} typeinfo in this image.", mPrepared.mVTableBegins.size(), mPrepared.mTypeInfoBegins.size());
     }

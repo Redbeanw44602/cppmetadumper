@@ -10,7 +10,8 @@ Reader::Reader(const std::string& pPath) {
     std::ifstream file;
     file.open(pPath, std::ios::binary);
     if (!file.is_open()) {
-        mState.setError("Failed to open file.");
+        spdlog::error("Failed to open file.");
+        mIsValid = false;
         return;
     }
     file.seekg(0, std::ios::beg); // ...what the fucking
@@ -18,8 +19,8 @@ Reader::Reader(const std::string& pPath) {
     file.close();
 }
 
-ReaderState Reader::getState() const {
-    return mState;
+bool Reader::isValid() const {
+    return mIsValid;
 }
 
 std::string Reader::readCString(size_t pMaxLength) {
