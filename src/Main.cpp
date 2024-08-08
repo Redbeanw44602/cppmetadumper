@@ -10,44 +10,31 @@
 
 using JSON = nlohmann::json;
 
-int main(int argc, char* argv[]) {
-
-    argparse::ArgumentParser program("VTable Exporter", "2.0.0");
-
-    auto logger = spdlog::stdout_color_st("Exporter");
-    logger->set_pattern("[%T.%e] [%n] [%^%l%$] %v");
-    spdlog::set_default_logger(logger);
+std::tuple<std::string, std::string> init_program(int argc, char* argv[]) {
+    argparse::ArgumentParser args("VTable Exporter", "2.0.0");
 
     // clang-format off
-    program.add_argument("target")
+    args.add_argument("target")
         .help("Path to a valid ELF file.")
         .required();
-    program.add_argument("-o", "--output")
+    args.add_argument("-o", "--output")
         .help("Path to save the result, in JSON format.")
         .required();
     // clang-format on
 
-    try {
-        program.parse_args(argc, argv);
-    } catch (const std::runtime_error& e) {
-        spdlog::error(e.what());
-        return -1;
-    }
+    args.parse_args(argc, argv);
 
-    auto input  = program.get<std::string>("target");
-    auto output = program.get<std::string>("-o");
-    if (output.ends_with(".json")) {
-        output.erase(output.size() - 5, 5);
-    }
-    output += ".json";
+    return std::make_tuple(args.get<std::string>("target"), args.get<std::string>("-o"));
+}
 
-    VTableReader reader(input);
-    if (!reader.isValid()) {
-        return 1;
-    }
+void init_logger() {
+    auto logger = spdlog::stdout_color_st("Exporter");
+    logger->set_pattern("[%T.%e] [%n] [%^%l%$] %v");
+    spdlog::set_default_logger(logger);
+}
 
-    // Virtual Functions
-    JSON jsonVft;
+JSON read_vtable(VTableReader& reader) {
+    JSON result;
     auto resultVft = reader.dumpVFTable();
     for (auto& i : resultVft.mVFTable) {
         auto subTables = JSON::array();
@@ -64,13 +51,13 @@ int main(int argc, char* argv[]) {
                 {"entities", entities}
             });
         }
-        jsonVft[i.mName] = JSON{
+        result[i.mName] = JSON{
             {"sub_tables", subTables}
         };
         if (i.mTypeName) {
-            jsonVft[i.mName]["type_name"] = *i.mTypeName;
+            result[i.mName]["type_name"] = *i.mTypeName;
         } else {
-            jsonVft[i.mName]["type_name"] = {};
+            result[i.mName]["type_name"] = {};
         }
     }
     spdlog::info(
@@ -79,23 +66,25 @@ int main(int argc, char* argv[]) {
         resultVft.mTotal,
         ((double)resultVft.mParsed / (double)resultVft.mTotal) * 100.0
     );
+    return result;
+}
 
-    // TypeInfos
-    JSON jsonTyp;
+JSON read_typeinfo(VTableReader& reader) {
+    JSON result;
     auto resultTyp = reader.dumpTypeInfo();
     for (auto& type : resultTyp.mTypeInfo) {
         if (!type) continue;
         switch (type->kind()) {
         case TypeInheritKind::None: {
-            auto typeInfo            = (NoneInheritTypeInfo*)type.get();
-            jsonTyp[typeInfo->mName] = {
+            auto typeInfo           = (NoneInheritTypeInfo*)type.get();
+            result[typeInfo->mName] = {
                 {"inherit_type", "None"}
             };
             break;
         }
         case TypeInheritKind::Single: {
-            auto typeInfo            = (SingleInheritTypeInfo*)type.get();
-            jsonTyp[typeInfo->mName] = {
+            auto typeInfo           = (SingleInheritTypeInfo*)type.get();
+            result[typeInfo->mName] = {
                 {"inherit_type", "Single"             },
                 {"parent_type",  typeInfo->mParentType},
                 {"offset",       typeInfo->mOffset    }
@@ -112,7 +101,7 @@ int main(int argc, char* argv[]) {
                     {"mask",   base.mMask  }
                 });
             }
-            jsonTyp[typeInfo->mName] = {
+            result[typeInfo->mName] = {
                 {"inherit_type", "Multiple"          },
                 {"attribute",    typeInfo->mAttribute},
                 {"base_classes", baseClasses         }
@@ -127,19 +116,44 @@ int main(int argc, char* argv[]) {
         resultTyp.mTotal,
         ((double)resultTyp.mParsed / (double)resultTyp.mTotal) * 100.0
     );
+    return result;
+}
 
-    std::ofstream file(output, std::ios::trunc);
+void save_to_json(const std::string& fileName, const JSON& result) {
+    std::ofstream file(fileName, std::ios::trunc);
     if (file.is_open()) {
-        file << JSON{
-            {"vtable",   jsonVft},
-            {"typeinfo", jsonTyp}
-        }.dump(4);
+        file << result.dump(4);
         file.close();
-        spdlog::info("Results have been saved to: {}", output);
+        spdlog::info("Results have been saved to: {}", fileName);
     } else {
-        spdlog::error("Failed to open file!");
-        return 1;
+        spdlog::error("Failed to open {}!", fileName);
+        return;
     }
+}
+
+int main(int argc, char* argv[]) {
+
+    std::string inputFileName, outputFileBase;
+    try {
+        std::tie(inputFileName, outputFileBase) = init_program(argc, argv);
+    } catch (const std::runtime_error& e) {
+        spdlog::error(e.what());
+        return -1;
+    }
+
+    if (outputFileBase.ends_with(".json")) {
+        outputFileBase.erase(outputFileBase.size() - 5, 5);
+    }
+
+    init_logger();
+
+    VTableReader reader(inputFileName);
+    if (!reader.isValid()) return -1;
+    auto jsonVft = read_vtable(reader);
+    auto jsonTyp = read_typeinfo(reader);
+
+    save_to_json(outputFileBase + ".vftable.json", jsonVft);
+    save_to_json(outputFileBase + ".typeinfo.json", jsonTyp);
 
     spdlog::info("All works done...");
 
