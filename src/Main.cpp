@@ -15,7 +15,7 @@ std::tuple<std::string, std::string> init_program(int argc, char* argv[]) {
 
     // clang-format off
     args.add_argument("target")
-        .help("Path to a valid ELF file.")
+        .help("Path to a valid executable.")
         .required();
     args.add_argument("-o", "--output")
         .help("Path to save the result, in JSON format.")
