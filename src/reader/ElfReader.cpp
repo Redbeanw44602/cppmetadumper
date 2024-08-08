@@ -90,10 +90,10 @@ bool ElfReader::forEachRelocations(const std::function<void(Relocation)>& pCall)
     }
     const relocation_section_accessor accessor(mImage, relaDyn);
     for (Elf_Xword idx = 0; idx < accessor.get_entries_num(); ++idx) {
-        Elf64_Addr offset;
-        Elf_Word   symbol;
-        unsigned   type;
-        Elf_Sxword addend;
+        Elf64_Addr offset{};
+        Elf_Word   symbol{};
+        unsigned   type{};
+        Elf_Sxword addend{};
         if (accessor.get_entry(idx, offset, symbol, type, addend)) {
             pCall(Relocation{offset, symbol, type, addend});
         }
@@ -193,6 +193,8 @@ void ElfReader::_relocateReadonlyData() {
             }
             break;
         }
+        case R_AMDGPU_REL64:
+            // TODO
         default:
             spdlog::warn("Unhandled relocation type: {}.", type);
             break;
