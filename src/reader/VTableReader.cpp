@@ -4,9 +4,7 @@
 
 #include "VTableReader.h"
 
-VTableReader::VTableReader(const std::string& pPath) : ElfReader(pPath) {
-    _prepareData();
-}
+VTableReader::VTableReader(const std::string& pPath) : ElfReader(pPath) { _prepareData(); }
 
 DumpVFTableResult VTableReader::dumpVFTable() {
 #if 1
@@ -33,41 +31,41 @@ DumpVFTableResult VTableReader::dumpVFTable() {
 
 std::optional<VTable> VTableReader::readVTable() {
     VTable result;
-    auto vtSym = lookupSymbol(cur());
+    auto   vtSym = lookupSymbol(cur());
     if (!vtSym || !vtSym->mName.starts_with("_ZTV")) {
         spdlog::error("Failed to reading vtable at {:#x}. [CURRENT_IS_NOT_VTABLE]", cur());
         return std::nullopt;
     }
     result.mName = vtSym->mName;
-    ptrdiff_t offsetToThis {0};
-    Elf64_Addr typeInfoPtr;
+    ptrdiff_t  offsetToThis{};
+    Elf64_Addr typeInfoPtr{};
     while (true) {
         auto value = read<intptr_t>();
         // pre-check
-        if (mPrepared.mTypeInfoBegins.contains(last())) {
-            break; // stopped, another typeinfo.
-        }
-        if (mPrepared.mLambdaBegins.contains(last())) {
-            break; // stopped, found _ZZZZN.
-        }
-        if (isInSection(value, ".rodata")) {
-            break; // stopped, another data.
-        }
-        if (isInSection(value, ".data.rel.ro")) {
-            break; // stopped, static member pointer.
-        }
+        if (mPrepared.mTypeInfoBegins.contains(last())) break; // stopped, another typeinfo.
+        if (mPrepared.mLambdaBegins.contains(last())) break;   // stopped, found _ZZZZN.
+        if (isInSection(value, ".rodata")) break;              // stopped, another data.
+        if (isInSection(value, ".data.rel.ro")) break;         // stopped, static member pointer.
         // read: Header
         if (value <= 0) {
             if (result.mSubTables.empty()) { // value == 0 (main table).
                 if (value != 0) {
-                    spdlog::error("Failed to reading vtable at {:#x} in {}. [ABNORMAL_THIS_OFFSET]", last(), vtSym->mName);
+                    spdlog::error(
+                        "Failed to reading vtable at {:#x} in {}. [ABNORMAL_THIS_OFFSET]",
+                        last(),
+                        vtSym->mName
+                    );
                     return std::nullopt;
                 }
                 // read: TypeInfo
-                typeInfoPtr = read<Elf64_Addr>(); // todo: Add support for rtti-less image.
+                typeInfoPtr      = read<Elf64_Addr>(); // todo: Add support for rtti-less image.
                 auto typeInfoSym = lookupSymbol(typeInfoPtr);
                 if (!typeInfoSym || !typeInfoSym->mName.starts_with("_ZTI")) {
-                    spdlog::error("Failed to reading vtable at {:#x} in {}. [ABNORMAL_TYPEINFO_PTR]", last(), vtSym->mName);
+                    spdlog::error(
+                        "Failed to reading vtable at {:#x} in {}. [ABNORMAL_TYPEINFO_PTR]",
+                        last(),
+                        vtSym->mName
+                    );
                     return std::nullopt;
                 }
                 result.mTypeName = typeInfoSym->mName;
@@ -78,7 +76,11 @@ std::optional<VTable> VTableReader::readVTable() {
                 offsetToThis = value; // value < 0 (sub table).
                 // check: TypeInfo
                 if (read<Elf64_Addr>() != typeInfoPtr) {
-                    spdlog::error("Failed to reading vtable at {:#x} in {}. [TYPEINFO_PTR_MISMATCH]", last(), vtSym->mName);
+                    spdlog::error(
+                        "Failed to reading vtable at {:#x} in {}. [TYPEINFO_PTR_MISMATCH]",
+                        last(),
+                        vtSym->mName
+                    );
                     return std::nullopt;
                 }
             }
@@ -90,7 +92,7 @@ std::optional<VTable> VTableReader::readVTable() {
             spdlog::error("Failed to reading vtable at {:#x} in {}. [UNHANDLED_POSITION]", last(), vtSym->mName);
             return std::nullopt;
         }
-        result.mSubTables[offsetToThis].emplace_back(VTableColumn {curSym->mName, curSym->mValue});
+        result.mSubTables[offsetToThis].emplace_back(VTableColumn{curSym->mName, curSym->mValue});
     }
     return result;
 }
@@ -120,14 +122,14 @@ std::unique_ptr<TypeInfo> VTableReader::readTypeInfo() {
     }
 
     auto value = read<int64_t>();
-    //auto EOS = getEndOfSections();
+    // auto EOS = getEndOfSections();
     value -= 0x10; // fixme: Why need to do this?
 
     auto inheritIndicator = lookupSymbol(value);
     if (!inheritIndicator) return nullptr;
     switch (H(inheritIndicator->mName.c_str())) {
     case H("_ZTVN10__cxxabiv117__class_type_infoE"): {
-        auto result = std::make_unique<NoneInheritTypeInfo>();
+        auto result   = std::make_unique<NoneInheritTypeInfo>();
         result->mName = typeSym->mName;
         return result;
     }
@@ -139,25 +141,25 @@ std::unique_ptr<TypeInfo> VTableReader::readTypeInfo() {
             spdlog::error("Failed to reading type info at {:#x}. [ABNORMAL_SYMBOL_VALUE]", last());
             return nullptr;
         }
-        result->mName = typeSym->mName;
-        result->mOffset = 0x0;
+        result->mName       = typeSym->mName;
+        result->mOffset     = 0x0;
         result->mParentType = baseTypeSym->mName;
         return result;
     }
     case H("_ZTVN10__cxxabiv121__vmi_class_type_infoE"): {
         auto result = std::make_unique<MultipleInheritTypeInfo>();
         move(8); // jump out _ZTS...
-        result->mName = typeSym->mName;
+        result->mName      = typeSym->mName;
         result->mAttribute = read<unsigned int>();
-        auto baseCount = read<unsigned int>();
+        auto baseCount     = read<unsigned int>();
         for (unsigned int idx = 0; idx < baseCount; idx++) {
             BaseClassInfo baseInfo;
-            auto baseTypeSym = lookupSymbol(read<int64_t>());
+            auto          baseTypeSym = lookupSymbol(read<int64_t>());
             if (!baseTypeSym) {
                 spdlog::error("Failed to reading type info at {:#x}. [ABNORMAL_SYMBOL_VALUE]", last());
                 return nullptr;
             }
-            auto flag = read<long long>();
+            auto flag        = read<long long>();
             baseInfo.mName   = baseTypeSym->mName;
             baseInfo.mOffset = (flag >> 8) & 0xFF;
             baseInfo.mMask   = flag & 0xFF;
@@ -198,7 +200,6 @@ void VTableReader::_prepareData() {
         spdlog::error("No symbols found in this image!");
         mIsValid = false;
     }
-
 }
 void VTableReader::printDebugString(const std::unique_ptr<TypeInfo>& pType) {
     if (!pType) return;

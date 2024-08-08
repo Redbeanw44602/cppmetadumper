@@ -10,22 +10,18 @@
 
 class Reader {
 public:
-
     explicit Reader(const std::string& pPath);
 
     [[nodiscard]] bool isValid() const;
 
 protected:
-
     enum RelativePos { Begin, Current, End };
 
-    virtual ptrdiff_t getReadOffset(uintptr_t pAddr) {
-        return 0;
-    };
+    virtual ptrdiff_t getReadOffset(uintptr_t pAddr) { return 0; };
 
     template <typename T>
     [[nodiscard]] T read() {
-        T value;
+        T    value;
         auto off = getReadOffset(cur());
         move(off);
         mStream.read((char*)&value, sizeof(T));
@@ -69,13 +65,9 @@ protected:
     std::string readCString(size_t pMaxLength);
     std::string readCString(uintptr_t pAddr, size_t pMaxLength);
 
-    inline uintptr_t cur() {
-        return mStream.tellg();
-    }
+    inline uintptr_t cur() { return mStream.tellg(); }
 
-    inline uintptr_t last() {
-        return cur() - mLastOperated;
-    }
+    inline uintptr_t last() { return cur() - mLastOperated; }
 
     inline bool move(int64_t pPos, RelativePos pRel = Current) {
         mStream.seekp(pPos, (std::ios_base::seekdir)pRel);
@@ -83,16 +75,12 @@ protected:
         return mStream.good();
     }
 
-    inline void reset() {
-        mStream.clear();
-    }
+    inline void reset() { mStream.clear(); }
 
-    bool mIsValid {true};
+    bool mIsValid{true};
 
 private:
-
     std::stringstream mStream;
 
-    uint64_t  mLastOperated {0};
-
+    uint64_t mLastOperated{0};
 };

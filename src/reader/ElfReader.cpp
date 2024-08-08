@@ -46,7 +46,7 @@ uint64_t ElfReader::getGapInFront(Elf64_Addr pAddr) const {
             continue;
         }
         auto begin = seg->get_virtual_address();
-        gap = begin - seg->get_offset();
+        gap        = begin - seg->get_offset();
         if (pAddr >= begin && pAddr < begin + seg->get_memory_size()) {
             return gap;
         }
@@ -64,15 +64,15 @@ bool ElfReader::forEachSymbols(ELFIO::section* pSec, const std::function<void(ui
     symbol_section_accessor accessor(mImage, pSec);
     if (accessor.get_symbols_num() <= 0) return false;
     for (Elf_Xword idx = 0; idx < accessor.get_symbols_num(); ++idx) {
-        std::string     name;
-        Elf64_Addr      value;
-        Elf_Xword       size;
-        unsigned char   bind;
-        unsigned char   type;
-        Elf_Half        sectionIndex;
-        unsigned char   other;
+        std::string   name;
+        Elf64_Addr    value;
+        Elf_Xword     size;
+        unsigned char bind;
+        unsigned char type;
+        Elf_Half      sectionIndex;
+        unsigned char other;
         if (accessor.get_symbol(idx, name, value, size, bind, type, sectionIndex, other)) {
-            pCall(idx, Symbol {name, value, size, bind, type, sectionIndex, other});
+            pCall(idx, Symbol{name, value, size, bind, type, sectionIndex, other});
         }
     }
     return true;
@@ -90,12 +90,12 @@ bool ElfReader::forEachRelocations(const std::function<void(Relocation)>& pCall)
     }
     const relocation_section_accessor accessor(mImage, relaDyn);
     for (Elf_Xword idx = 0; idx < accessor.get_entries_num(); ++idx) {
-        Elf64_Addr  offset;
-        Elf_Word    symbol;
-        unsigned    type;
-        Elf_Sxword  addend;
+        Elf64_Addr offset;
+        Elf_Word   symbol;
+        unsigned   type;
+        Elf_Sxword addend;
         if (accessor.get_entry(idx, offset, symbol, type, addend)) {
-            pCall(Relocation {offset, symbol, type, addend});
+            pCall(Relocation{offset, symbol, type, addend});
         }
     }
     return true;
@@ -111,21 +111,26 @@ std::optional<Symbol> ElfReader::lookupSymbol(const std::string& pName) {
 
 std::optional<Symbol> ElfReader::getSymbol(ELFIO::section* pSec, uint64_t pIndex) {
     if (!pSec) return std::nullopt;
-    Symbol result;
+    Symbol                  result;
     symbol_section_accessor accessor(mImage, pSec);
-    if (!accessor.get_symbol(pIndex, result.mName, result.mValue, result.mSize, result.mBind, result.mType, result.mSectionIndex, result.mOther)) {
+    if (!accessor.get_symbol(
+            pIndex,
+            result.mName,
+            result.mValue,
+            result.mSize,
+            result.mBind,
+            result.mType,
+            result.mSectionIndex,
+            result.mOther
+        )) {
         return std::nullopt;
     }
     return result;
 }
 
-std::optional<Symbol> ElfReader::getSymbol(uint64_t pIndex) {
-    return getSymbol(_fetchSection(".symtab"), pIndex);
-}
+std::optional<Symbol> ElfReader::getSymbol(uint64_t pIndex) { return getSymbol(_fetchSection(".symtab"), pIndex); }
 
-std::optional<Symbol> ElfReader::getDynSymbol(uint64_t pIndex) {
-    return getSymbol(_fetchSection(".dynsym"), pIndex);
-}
+std::optional<Symbol> ElfReader::getDynSymbol(uint64_t pIndex) { return getSymbol(_fetchSection(".dynsym"), pIndex); }
 
 section* ElfReader::_fetchSection(const char* pSecName) const {
     for (auto& sec : mImage.sections) {
@@ -146,9 +151,9 @@ void ElfReader::_relocateReadonlyData() {
         return;
     }
 
-    const auto begin = roData->get_address();
-    const auto end = begin + roData->get_size();
-    const auto EOS = getEndOfSections();
+    const auto begin      = roData->get_address();
+    const auto end        = begin + roData->get_size();
+    const auto EOS        = getEndOfSections();
     const auto gapInFront = getGapInFront(begin);
 
     forEachRelocations([&](const Relocation& pRel) {
@@ -156,7 +161,7 @@ void ElfReader::_relocateReadonlyData() {
             return;
         }
         auto offset = pRel.mOffset - gapInFront;
-        auto type = ELF64_R_TYPE(pRel.mType);
+        auto type   = ELF64_R_TYPE(pRel.mType);
         switch (type) {
         case R_X86_64_64:
         case R_AARCH64_ABS64: {
@@ -214,11 +219,10 @@ void ElfReader::_buildSymbolCache() {
     if (!mIsValid) return;
 
     if (!forEachSymbols([this](uint64_t index, const Symbol& symbol) {
-        mSymbolCache.mFromName.try_emplace(symbol.mName, index);
-        mSymbolCache.mFromValue.try_emplace(symbol.mValue, index);
-    })) {
+            mSymbolCache.mFromName.try_emplace(symbol.mName, index);
+            mSymbolCache.mFromValue.try_emplace(symbol.mValue, index);
+        })) {
         spdlog::error("No symbols found in this image!");
         mIsValid = false;
     }
-
 }

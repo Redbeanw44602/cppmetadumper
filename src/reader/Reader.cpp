@@ -19,9 +19,7 @@ Reader::Reader(const std::string& pPath) {
     file.close();
 }
 
-bool Reader::isValid() const {
-    return mIsValid;
-}
+bool Reader::isValid() const { return mIsValid; }
 
 std::string Reader::readCString(size_t pMaxLength) {
     std::string result;

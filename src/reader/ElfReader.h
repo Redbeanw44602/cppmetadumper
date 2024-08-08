@@ -9,45 +9,39 @@
 #include <elfio/elfio.hpp>
 
 using ELFIO::Elf64_Addr;
-using ELFIO::Elf_Word;
-using ELFIO::Elf_Xword;
 using ELFIO::Elf_Half;
 using ELFIO::Elf_Sxword;
+using ELFIO::Elf_Word;
+using ELFIO::Elf_Xword;
 
-enum class Architecture {
-    Unsupported,
-    X86_64,
-    AArch64
-};
+enum class Architecture { Unsupported, X86_64, AArch64 };
 
 struct Symbol {
-    std::string     mName;
-    Elf64_Addr      mValue;
-    Elf_Xword       mSize;
-    unsigned char   mBind;
-    unsigned char   mType;
-    Elf_Half        mSectionIndex;
-    unsigned char   mOther;
+    std::string   mName;
+    Elf64_Addr    mValue;
+    Elf_Xword     mSize;
+    unsigned char mBind;
+    unsigned char mType;
+    Elf_Half      mSectionIndex;
+    unsigned char mOther;
 };
 
 struct Relocation {
-    Elf64_Addr      mOffset;
-    Elf_Word        mSymbolIndex;
-    unsigned        mType;
-    Elf_Sxword      mAddend;
+    Elf64_Addr mOffset;
+    Elf_Word   mSymbolIndex;
+    unsigned   mType;
+    Elf_Sxword mAddend;
 };
 
 class ElfReader : public Reader {
 public:
-
     explicit ElfReader(const std::string& pPath);
 
 protected:
-
-    [[nodiscard]] Elf64_Addr getEndOfSections() const;
+    [[nodiscard]] Elf64_Addr   getEndOfSections() const;
     [[nodiscard]] Architecture getArchitecture() const;
-    [[nodiscard]] uint64_t getGapInFront(Elf64_Addr pAddr) const;
-    [[nodiscard]] bool isInSection(Elf64_Addr pAddr, const char* pSecName) const;
+    [[nodiscard]] uint64_t     getGapInFront(Elf64_Addr pAddr) const;
+    [[nodiscard]] bool         isInSection(Elf64_Addr pAddr, const char* pSecName) const;
 
     bool forEachSymbols(ELFIO::section* pSec, const std::function<void(uint64_t, Symbol)>& pCall);
     bool forEachSymbols(const std::function<void(uint64_t, Symbol)>& pCall);
@@ -62,12 +56,9 @@ protected:
 
     std::optional<Symbol> getDynSymbol(uint64_t pIndex);
 
-    ptrdiff_t getReadOffset(Elf64_Addr pAddr) override {
-        return -(ptrdiff_t)getGapInFront(pAddr);
-    }
+    ptrdiff_t getReadOffset(Elf64_Addr pAddr) override { return -(ptrdiff_t)getGapInFront(pAddr); }
 
 private:
-
     ELFIO::section* _fetchSection(const char* pSecName) const;
 
     void _relocateReadonlyData();
@@ -79,5 +70,4 @@ private:
         std::unordered_map<std::string, uint64_t> mFromName;
         std::unordered_map<Elf64_Addr, uint64_t>  mFromValue;
     } mSymbolCache;
-
 };

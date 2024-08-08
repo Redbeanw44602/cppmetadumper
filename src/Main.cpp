@@ -18,12 +18,14 @@ int main(int argc, char* argv[]) {
     logger->set_pattern("[%T.%e] [%n] [%^%l%$] %v");
     spdlog::set_default_logger(logger);
 
+    // clang-format off
     program.add_argument("target")
         .help("Path to a valid ELF file.")
         .required();
     program.add_argument("-o", "--output")
         .help("Path to save the result, in JSON format.")
         .required();
+    // clang-format on
 
     try {
         program.parse_args(argc, argv);
@@ -32,7 +34,7 @@ int main(int argc, char* argv[]) {
         return -1;
     }
 
-    auto input = program.get<std::string>("target");
+    auto input  = program.get<std::string>("target");
     auto output = program.get<std::string>("-o");
     if (output.ends_with(".json")) {
         output.erase(output.size() - 5, 5);
@@ -52,17 +54,17 @@ int main(int argc, char* argv[]) {
         for (auto& j : i.mSubTables) {
             auto entities = JSON::array();
             for (auto& k : j.second) {
-                entities.emplace_back(JSON {
+                entities.emplace_back(JSON{
                     {"symbol", k.mSymbolName},
-                    {"rva", k.mRVA}
+                    {"rva",    k.mRVA       }
                 });
             }
-            subTables.emplace_back(JSON {
-                {"offset", j.first},
+            subTables.emplace_back(JSON{
+                {"offset",   j.first },
                 {"entities", entities}
             });
         }
-        jsonVft[i.mName] = JSON {
+        jsonVft[i.mName] = JSON{
             {"sub_tables", subTables}
         };
         if (i.mTypeName) {
@@ -71,7 +73,12 @@ int main(int argc, char* argv[]) {
             jsonVft[i.mName]["type_name"] = {};
         }
     }
-    spdlog::info("Parsed vftable(s): {}/{}({:.4}%)", resultVft.mParsed, resultVft.mTotal, ((double)resultVft.mParsed / (double)resultVft.mTotal) * 100.0);
+    spdlog::info(
+        "Parsed vftable(s): {}/{}({:.4}%)",
+        resultVft.mParsed,
+        resultVft.mTotal,
+        ((double)resultVft.mParsed / (double)resultVft.mTotal) * 100.0
+    );
 
     // TypeInfos
     JSON jsonTyp;
@@ -80,46 +87,51 @@ int main(int argc, char* argv[]) {
         if (!type) continue;
         switch (type->kind()) {
         case TypeInheritKind::None: {
-            auto typeInfo = (NoneInheritTypeInfo*)type.get();
+            auto typeInfo            = (NoneInheritTypeInfo*)type.get();
             jsonTyp[typeInfo->mName] = {
                 {"inherit_type", "None"}
             };
             break;
         }
         case TypeInheritKind::Single: {
-            auto typeInfo = (SingleInheritTypeInfo*)type.get();
+            auto typeInfo            = (SingleInheritTypeInfo*)type.get();
             jsonTyp[typeInfo->mName] = {
-                {"inherit_type", "Single"},
-                {"parent_type", typeInfo->mParentType},
-                {"offset", typeInfo->mOffset}
+                {"inherit_type", "Single"             },
+                {"parent_type",  typeInfo->mParentType},
+                {"offset",       typeInfo->mOffset    }
             };
             break;
         }
         case TypeInheritKind::Multiple: {
-            auto typeInfo = (MultipleInheritTypeInfo*)type.get();
+            auto typeInfo    = (MultipleInheritTypeInfo*)type.get();
             auto baseClasses = JSON::array();
             for (auto& base : typeInfo->mBaseClasses) {
-                baseClasses.emplace_back(JSON {
+                baseClasses.emplace_back(JSON{
                     {"offset", base.mOffset},
-                    {"name", base.mName},
-                    {"mask", base.mMask}
+                    {"name",   base.mName  },
+                    {"mask",   base.mMask  }
                 });
             }
             jsonTyp[typeInfo->mName] = {
-                {"inherit_type", "Multiple"},
-                {"attribute", typeInfo->mAttribute},
-                {"base_classes", baseClasses}
+                {"inherit_type", "Multiple"          },
+                {"attribute",    typeInfo->mAttribute},
+                {"base_classes", baseClasses         }
             };
             break;
         }
         }
     }
-    spdlog::info("Parsed typeinfo(s): {}/{}({:.4}%)", resultTyp.mParsed, resultTyp.mTotal, ((double)resultTyp.mParsed / (double)resultTyp.mTotal) * 100.0);
+    spdlog::info(
+        "Parsed typeinfo(s): {}/{}({:.4}%)",
+        resultTyp.mParsed,
+        resultTyp.mTotal,
+        ((double)resultTyp.mParsed / (double)resultTyp.mTotal) * 100.0
+    );
 
     std::ofstream file(output, std::ios::trunc);
     if (file.is_open()) {
-        file << JSON {
-            {"vtable", jsonVft},
+        file << JSON{
+            {"vtable",   jsonVft},
             {"typeinfo", jsonTyp}
         }.dump(4);
         file.close();
@@ -132,5 +144,4 @@ int main(int argc, char* argv[]) {
     spdlog::info("All works done...");
 
     return 0;
-
 }
