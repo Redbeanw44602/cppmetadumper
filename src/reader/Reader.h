@@ -78,8 +78,8 @@ protected:
     }
 
     inline bool move(int64_t pPos, RelativePos pRel = Current) {
-        mStream.seekp(pPos, (int)pRel);
-        mStream.seekg(pPos, (int)pRel);
+        mStream.seekp(pPos, (std::ios_base::seekdir)pRel);
+        mStream.seekg(pPos, (std::ios_base::seekdir)pRel);
         return mStream.good();
     }
 
