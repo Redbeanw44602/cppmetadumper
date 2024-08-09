@@ -59,7 +59,7 @@ bool ElfReader::isInSection(Elf64_Addr pAddr, const char* pSecName) const {
     auto section = _fetchSection(pSecName);
     return section && section->get_address() < pAddr && (section->get_address() + section->get_size()) > pAddr;
 }
-bool ElfReader::forEachSymbols(ELFIO::section* pSec, const std::function<void(uint64_t, Symbol)>& pCall) {
+bool ElfReader::forEachSymbolTable(ELFIO::section* pSec, const std::function<void(uint64_t, Symbol)>& pCall) {
     if (!pSec) return false;
     symbol_section_accessor accessor(mImage, pSec);
     if (accessor.get_symbols_num() <= 0) return false;
@@ -79,7 +79,11 @@ bool ElfReader::forEachSymbols(ELFIO::section* pSec, const std::function<void(ui
 }
 
 bool ElfReader::forEachSymbols(const std::function<void(uint64_t, Symbol)>& pCall) {
-    return forEachSymbols(_fetchSection(".symtab"), pCall);
+    return forEachSymbolTable(_fetchSection(".symtab"), pCall);
+}
+
+bool ElfReader::forEachDynSymbols(const std::function<void(uint64_t, Symbol)>& pCall) {
+    return forEachSymbolTable(_fetchSection(".dynsym"), pCall);
 }
 
 bool ElfReader::forEachRelocations(const std::function<void(Relocation)>& pCall) {
@@ -102,11 +106,15 @@ bool ElfReader::forEachRelocations(const std::function<void(Relocation)>& pCall)
 }
 
 std::optional<Symbol> ElfReader::lookupSymbol(Elf64_Addr pAddr) {
-    return mSymbolCache.mFromValue.contains(pAddr) ? getSymbol(mSymbolCache.mFromValue.at(pAddr)) : std::nullopt;
+    if (mSymbolCache.mFromValue.contains(pAddr)) return getSymbol(mSymbolCache.mFromValue.at(pAddr));
+    if (mDynSymbolCache.mFromValue.contains(pAddr)) return getDynSymbol(mDynSymbolCache.mFromValue.at(pAddr));
+    return std::nullopt;
 }
 
 std::optional<Symbol> ElfReader::lookupSymbol(const std::string& pName) {
-    return mSymbolCache.mFromName.contains(pName) ? getSymbol(mSymbolCache.mFromName.at(pName)) : std::nullopt;
+    if (mSymbolCache.mFromName.contains(pName)) return getSymbol(mSymbolCache.mFromName.at(pName));
+    if (mDynSymbolCache.mFromName.contains(pName)) return getDynSymbol(mDynSymbolCache.mFromName.at(pName));
+    return std::nullopt;
 }
 
 std::optional<Symbol> ElfReader::getSymbol(ELFIO::section* pSec, uint64_t pIndex) {
@@ -173,7 +181,7 @@ void ElfReader::_relocateReadonlyData() {
                 } else {
                     // External Symbol
                     // fixme: Deviations may occur, although this does not affect data export.
-                    write<Elf64_Addr, false>(offset, EOS + (pRel.mSymbolIndex - 1) * 0x8 + pRel.mAddend);
+                    write<Elf64_Addr, false>(offset, EOS + pRel.mSymbolIndex * sizeof(int64_t) + pRel.mAddend);
                 }
             } else {
                 spdlog::error("Get dynamic symbol failed!");
@@ -200,13 +208,13 @@ void ElfReader::_relocateReadonlyData() {
             break;
         }
     });
+#define DEBUG_DUMP_SECTION
 #ifdef DEBUG_DUMP_SECTION
     std::ofstream d_Dumper("relro.fixed.dump", std::ios::binary | std::ios::trunc);
     if (d_Dumper.is_open()) {
-        mStream.seekg(begin - gapInFront, std::ios::beg);
-        while ((Elf64_Addr)mStream.tellg() < end - gapInFront) {
-            unsigned char data;
-            mStream.read((char*)&data, sizeof(data));
+        move(begin, Begin);
+        while (cur() < end) {
+            auto data = read<unsigned char>();
             d_Dumper.write((char*)&data, sizeof(data));
         }
         d_Dumper.close();
@@ -224,7 +232,13 @@ void ElfReader::_buildSymbolCache() {
             mSymbolCache.mFromName.try_emplace(symbol.mName, index);
             mSymbolCache.mFromValue.try_emplace(symbol.mValue, index);
         })) {
-        spdlog::error("No symbols found in this image!");
-        mIsValid = false;
+        spdlog::warn(".symtab not found in this image!");
     }
+
+    // if (!forEachDynSymbols([this](uint64_t index, const Symbol& symbol) {
+    //         mDynSymbolCache.mFromName.try_emplace(symbol.mName, index);
+    //         mDynSymbolCache.mFromValue.try_emplace(getEndOfSections() + sizeof(int64_t) * index, index);
+    //     })) {
+    //     spdlog::warn(".dynsym not found in this image!");
+    // }
 }

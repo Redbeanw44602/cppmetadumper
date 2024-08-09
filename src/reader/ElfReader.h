@@ -16,6 +16,18 @@ using ELFIO::Elf_Xword;
 
 enum class Architecture { Unsupported, X86_64, AArch64 };
 
+constexpr std::string arch2str(Architecture arch) {
+    switch (arch) {
+    case Architecture::X86_64:
+        return "x86_64";
+    case Architecture::AArch64:
+        return "aarch64";
+    case Architecture::Unsupported:
+    default:
+        return "unsupported";
+    }
+}
+
 struct Symbol {
     std::string   mName;
     Elf64_Addr    mValue;
@@ -37,14 +49,17 @@ class ElfReader : public Reader {
 public:
     explicit ElfReader(const std::string& pPath);
 
-protected:
-    [[nodiscard]] Elf64_Addr   getEndOfSections() const;
     [[nodiscard]] Architecture getArchitecture() const;
-    [[nodiscard]] uint64_t     getGapInFront(Elf64_Addr pAddr) const;
-    [[nodiscard]] bool         isInSection(Elf64_Addr pAddr, const char* pSecName) const;
 
-    bool forEachSymbols(ELFIO::section* pSec, const std::function<void(uint64_t, Symbol)>& pCall);
+protected:
+    [[nodiscard]] Elf64_Addr getEndOfSections() const;
+    [[nodiscard]] uint64_t   getGapInFront(Elf64_Addr pAddr) const;
+    [[nodiscard]] bool       isInSection(Elf64_Addr pAddr, const char* pSecName) const;
+
+    bool forEachSymbolTable(ELFIO::section* pSec, const std::function<void(uint64_t, Symbol)>& pCall);
+
     bool forEachSymbols(const std::function<void(uint64_t, Symbol)>& pCall);
+    bool forEachDynSymbols(const std::function<void(uint64_t, Symbol)>& pCall);
 
     bool forEachRelocations(const std::function<void(Relocation)>& pCall);
 
@@ -69,5 +84,8 @@ private:
     struct SymbolCache {
         std::unordered_map<std::string, uint64_t> mFromName;
         std::unordered_map<Elf64_Addr, uint64_t>  mFromValue;
-    } mSymbolCache;
+    };
+
+    SymbolCache mSymbolCache;
+    SymbolCache mDynSymbolCache;
 };
