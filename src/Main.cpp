@@ -29,7 +29,7 @@ std::tuple<std::string, std::string> init_program(int argc, char* argv[]) {
 
 void init_logger() {
     auto logger = spdlog::stdout_color_st("Exporter");
-    logger->set_pattern("[%T.%e] [%n] [%^%l%$] %v");
+    logger->set_pattern("[%T.%e %^%l%$] %v");
     spdlog::set_default_logger(logger);
 }
 
@@ -133,6 +133,8 @@ void save_to_json(const std::string& fileName, const JSON& result) {
 
 int main(int argc, char* argv[]) {
 
+    init_logger();
+
     std::string inputFileName, outputFileBase;
     try {
         std::tie(inputFileName, outputFileBase) = init_program(argc, argv);
@@ -145,10 +147,12 @@ int main(int argc, char* argv[]) {
         outputFileBase.erase(outputFileBase.size() - 5, 5);
     }
 
-    init_logger();
-
     VTableReader reader(inputFileName);
     if (!reader.isValid()) return -1;
+
+    spdlog::info("{:<12}{}", "Input file:", inputFileName);
+    spdlog::info("{:<12}{} for {}", "Format:", "ELF64", arch2str(reader.getArchitecture()));
+
     auto jsonVft = read_vtable(reader);
     auto jsonTyp = read_typeinfo(reader);
 
