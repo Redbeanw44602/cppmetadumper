@@ -208,7 +208,6 @@ void ElfReader::_relocateReadonlyData() {
             break;
         }
     });
-#define DEBUG_DUMP_SECTION
 #ifdef DEBUG_DUMP_SECTION
     std::ofstream d_Dumper("relro.fixed.dump", std::ios::binary | std::ios::trunc);
     if (d_Dumper.is_open()) {
@@ -235,10 +234,10 @@ void ElfReader::_buildSymbolCache() {
         spdlog::warn(".symtab not found in this image!");
     }
 
-    // if (!forEachDynSymbols([this](uint64_t index, const Symbol& symbol) {
-    //         mDynSymbolCache.mFromName.try_emplace(symbol.mName, index);
-    //         mDynSymbolCache.mFromValue.try_emplace(getEndOfSections() + sizeof(int64_t) * index, index);
-    //     })) {
-    //     spdlog::warn(".dynsym not found in this image!");
-    // }
+    if (!forEachDynSymbols([this](uint64_t index, const Symbol& symbol) {
+            mDynSymbolCache.mFromName.try_emplace(symbol.mName, index);
+            mDynSymbolCache.mFromValue.try_emplace(getEndOfSections() + sizeof(int64_t) * index, index);
+        })) {
+        spdlog::warn(".dynsym not found in this image!");
+    }
 }

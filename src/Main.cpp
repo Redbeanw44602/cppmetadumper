@@ -11,7 +11,7 @@
 using JSON = nlohmann::json;
 
 std::tuple<std::string, std::string> init_program(int argc, char* argv[]) {
-    argparse::ArgumentParser args("VTable Exporter", "2.0.0");
+    argparse::ArgumentParser args("cppmetadumper", "2.0.0");
 
     // clang-format off
     args.add_argument("target")
@@ -28,8 +28,11 @@ std::tuple<std::string, std::string> init_program(int argc, char* argv[]) {
 }
 
 void init_logger() {
-    auto logger = spdlog::stdout_color_st("Exporter");
+    auto logger = spdlog::stdout_color_st("cppmetadumper");
     logger->set_pattern("[%T.%e %^%l%$] %v");
+#ifndef NDEBUG
+    logger->set_level(spdlog::level::debug);
+#endif
     spdlog::set_default_logger(logger);
 }
 

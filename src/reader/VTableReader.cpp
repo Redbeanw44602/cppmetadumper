@@ -99,10 +99,16 @@ std::optional<VTable> VTableReader::readVTable() {
 
 DumpTypeInfoResult VTableReader::dumpTypeInfo() {
     DumpTypeInfoResult result;
+    result.mTotal = mPrepared.mTypeInfoBegins.size();
     for (auto& addr : mPrepared.mTypeInfoBegins) {
         move(addr, Begin);
-        auto type = readTypeInfo();
-        result.mTotal++;
+        std::unique_ptr<TypeInfo> type;
+        try {
+            type = readTypeInfo();
+        } catch (const std::runtime_error& e) {
+            spdlog::error(e.what());
+            break;
+        }
         if (type) {
             result.mTypeInfo.emplace_back(std::move(type));
             result.mParsed++;
@@ -115,61 +121,90 @@ std::unique_ptr<TypeInfo> VTableReader::readTypeInfo() {
     // Reference:
     // https://itanium-cxx-abi.github.io/cxx-abi/abi.html#rtti-layout
 
-    auto typeSym = lookupSymbol(cur());
-    if (!typeSym || !typeSym->mName.starts_with("_ZTI")) {
-        spdlog::error("Failed to reading type info at {:#x}. [CURRENT_IS_NOT_TYPEINFO]", cur());
-        return nullptr;
+    auto beginAddr = cur();
+
+    if (beginAddr == 0xffffffffffffffff) {
+        // Bad image.
+        throw std::runtime_error("For some unknown reason, the reading process stopped.");
     }
 
-    auto value = read<int64_t>();
-    // auto EOS = getEndOfSections();
-    value -= 0x10; // fixme: Why need to do this?
+    auto readZTS = [this]() -> std::string {
+        auto value = read<int64_t>();
+        // spdlog::debug("\tReading ZTS at {:#x}", value);
+        auto str = readCString(value, 2048);
+        return str.empty() ? str : "_ZTI" + str;
+    };
 
-    auto inheritIndicator = lookupSymbol(value);
-    if (!inheritIndicator) return nullptr;
+    auto readZTI = [this, readZTS]() -> std::string {
+        auto backAddr = cur() + sizeof(int64_t);
+        auto value    = read<int64_t>();
+        if (!isInSection(value, ".data.rel.ro")) { // external
+            if (auto sym = lookupSymbol(value)) return sym->mName;
+            else return {};
+        }
+        move(value, Begin);
+        move(sizeof(int64_t)); // ignore ZTI
+        auto str = readZTS();
+        move(backAddr, Begin);
+        return str;
+    };
+
+    auto inheritIndicatorValue = read<int64_t>() - 0x10; // fixme: Why need to do this?
+
+    auto inheritIndicator = lookupSymbol(inheritIndicatorValue);
+    if (!inheritIndicator) {
+        spdlog::error("Failed to reading type info at {:#x}. [CURRENT_IS_NOT_TYPEINFO]", beginAddr);
+        return nullptr;
+    }
+    // spdlog::debug("Processing: {:#x}", beginAddr);
     switch (H(inheritIndicator->mName.c_str())) {
     case H("_ZTVN10__cxxabiv117__class_type_infoE"): {
         auto result   = std::make_unique<NoneInheritTypeInfo>();
-        result->mName = typeSym->mName;
-        return result;
-    }
-    case H("_ZTVN10__cxxabiv120__si_class_type_infoE"): {
-        auto result = std::make_unique<SingleInheritTypeInfo>();
-        move(8); // jump out _ZTS...
-        auto baseTypeSym = lookupSymbol(read<int64_t>());
-        if (!baseTypeSym) {
+        result->mName = readZTS();
+        if (result->mName.empty()) {
             spdlog::error("Failed to reading type info at {:#x}. [ABNORMAL_SYMBOL_VALUE]", last());
             return nullptr;
         }
-        result->mName       = typeSym->mName;
+        return result;
+    }
+    case H("_ZTVN10__cxxabiv120__si_class_type_infoE"): {
+        auto result         = std::make_unique<SingleInheritTypeInfo>();
+        result->mName       = readZTS();
         result->mOffset     = 0x0;
-        result->mParentType = baseTypeSym->mName;
+        result->mParentType = readZTI();
+        if (result->mName.empty() || result->mParentType.empty()) {
+            spdlog::error("Failed to reading type info at {:#x}. [ABNORMAL_SYMBOL_VALUE]", last());
+            return nullptr;
+        }
         return result;
     }
     case H("_ZTVN10__cxxabiv121__vmi_class_type_infoE"): {
-        auto result = std::make_unique<MultipleInheritTypeInfo>();
-        move(8); // jump out _ZTS...
-        result->mName      = typeSym->mName;
+        auto result   = std::make_unique<MultipleInheritTypeInfo>();
+        result->mName = readZTS();
+        if (result->mName.empty()) {
+            spdlog::error("Failed to reading type info at {:#x}. [ABNORMAL_SYMBOL_VALUE]", last());
+            return nullptr;
+        }
         result->mAttribute = read<unsigned int>();
         auto baseCount     = read<unsigned int>();
         for (unsigned int idx = 0; idx < baseCount; idx++) {
             BaseClassInfo baseInfo;
-            auto          baseTypeSym = lookupSymbol(read<int64_t>());
-            if (!baseTypeSym) {
+            baseInfo.mName = readZTI();
+            if (baseInfo.mName.empty()) {
                 spdlog::error("Failed to reading type info at {:#x}. [ABNORMAL_SYMBOL_VALUE]", last());
                 return nullptr;
             }
             auto flag        = read<long long>();
-            baseInfo.mName   = baseTypeSym->mName;
             baseInfo.mOffset = (flag >> 8) & 0xFF;
             baseInfo.mMask   = flag & 0xFF;
             result->mBaseClasses.emplace_back(baseInfo);
         }
         return result;
     }
+    default:
+        spdlog::error("Failed to reading type info at {:#x}. [UNKNOWN_INHERIT_TYPE]", beginAddr);
+        return nullptr;
     }
-    // spdlog::error("Unhandled inherit type at {:#x}", last());
-    return nullptr;
 }
 
 void VTableReader::printDebugString(const VTable& pTable) {
@@ -183,10 +218,8 @@ void VTableReader::printDebugString(const VTable& pTable) {
 }
 
 void VTableReader::_prepareData() {
-
     if (!mIsValid) return;
-
-    auto result = forEachSymbols([this](uint64_t pIndex, const Symbol& pSym) {
+    forEachSymbols([this](uint64_t pIndex, const Symbol& pSym) {
         if (pSym.mName.starts_with("_ZTV")) {
             mPrepared.mVTableBegins.emplace(pSym.mValue);
         } else if (pSym.mName.starts_with("_ZTI")) {
@@ -195,12 +228,18 @@ void VTableReader::_prepareData() {
             mPrepared.mLambdaBegins.emplace(pSym.mValue);
         }
     });
-
-    if (!result) {
-        spdlog::error("No symbols found in this image!");
-        mIsValid = false;
-    }
+    forEachRelocations([this](const Relocation& pReloc) {
+        auto symbol = getDynSymbol(pReloc.mSymbolIndex);
+        if (!symbol) return;
+        switch (H(symbol->mName.c_str())) {
+        case H("_ZTVN10__cxxabiv117__class_type_infoE"):
+        case H("_ZTVN10__cxxabiv120__si_class_type_infoE"):
+        case H("_ZTVN10__cxxabiv121__vmi_class_type_infoE"):
+            mPrepared.mTypeInfoBegins.emplace(pReloc.mOffset);
+        }
+    });
 }
+
 void VTableReader::printDebugString(const std::unique_ptr<TypeInfo>& pType) {
     if (!pType) return;
     spdlog::info("TypeInfo: {}", pType->mName);
