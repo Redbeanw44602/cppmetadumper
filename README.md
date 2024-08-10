@@ -1,9 +1,9 @@
-# VTable Exporter
+# cppmetadumper
 This is a tool that can extract "C++ meta information" from executable files, such as `Vftable` and `RTTI`.
 
 ## Usage
 ```
-Usage: VTable Exporter [-h] --output VAR target
+Usage: cppmetadumper [-h] --output VAR target
 
 Positional arguments:
   target        Path to a valid executable. [required]
@@ -20,8 +20,8 @@ If I now need to extract RTTI information from `libsample.so`:
 The resulting will be saved in JSON format.  
 
 ## Features
- - Supported platforms: `AArch64`, `X86_64`.
- - Supported formats: `ELF`.
+ - Supported platforms: `aarch64`, `x86_64`.
+ - Supported formats: `ELF64`.
  - Automatically rebuild `.data.rel.ro`.
  - Export RTTI perfectly.
 
@@ -30,10 +30,12 @@ The resulting will be saved in JSON format.
  - [ ] PE support.
  - [ ] Parsing vbtable.
 
-## Limitation
- - Exporting a virtual function table requires a symbol table (`.symtab`).
- - If you need to export RTTI, make sure the target binary was compiled without `-fno-rtti`.
- - (bug) **If your file requires to rebuilt data.rel.ro, then the RVA of the external symbol may be wrong.** This problem affects the export results of Vftable, but not RTTI.
+## For GCC/Clang compilation results
+ - At least one of the symbol table or RTTI is required to properly identify and export the vftable.
+
+## Known issues
+ - The vftable export result is not guaranteed to be completely correct.
+ - If your file requires to rebuilt data.rel.ro, then the RVA of the external symbol may be wrong. This problem affects the export results of Vftable, but not RTTI.
 > If you know how to solve it, please let me know ;)
 
 ## Have a problem?

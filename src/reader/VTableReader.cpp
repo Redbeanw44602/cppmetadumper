@@ -3,83 +3,119 @@
 //
 
 #include "VTableReader.h"
+#include <cstdint>
 
 VTableReader::VTableReader(const std::string& pPath) : ElfReader(pPath) { _prepareData(); }
 
 DumpVFTableResult VTableReader::dumpVFTable() {
-#if 1
     DumpVFTableResult result;
-    for (auto& addr : mPrepared.mVTableBegins) {
-        move(addr, Begin);
-        auto vt = readVTable();
-        result.mTotal++;
-        if (vt) {
-            result.mVFTable.emplace_back(*vt);
-            result.mParsed++;
+
+    // Dump with symbol table:
+    if (!mPrepared.mVTableBegins.empty()) {
+        for (auto& addr : mPrepared.mVTableBegins) {
+            move(addr, Begin);
+            auto vt = readVTable();
+            result.mTotal++;
+            if (vt) {
+                result.mVFTable.emplace_back(*vt);
+                result.mParsed++;
+            }
+        }
+        return result;
+    }
+
+    // Dump without symbol table:
+    if (!moveToSection(".data.rel.ro")) {
+        spdlog::error("Unable to move to target section.");
+        return result;
+    }
+    move(sizeof(int64_t));
+
+    while (isInSection(cur(), ".data.rel.ro")) {
+        auto backAddr = cur();
+        auto expect1  = read<int64_t>();
+        auto expect2  = read<int64_t>();
+        auto expect3  = read<int64_t>();
+        move(backAddr, Begin);
+        if (expect1 == 0 && (expect2 == 0 || mPrepared.mTypeInfoBegins.contains(expect2))
+            && isInSection(expect3, ".text")) {
+
+            auto vt = readVTable();
+            if (vt) {
+                result.mVFTable.emplace_back(*vt);
+                result.mParsed++;
+            }
+        } else {
+            move(sizeof(int64_t));
         }
     }
+
     return result;
-#else
-    move(0x0000000007EFAC40, Begin);
-    auto vtable = readVTable();
-    if (vtable) {
-        printDebugString(*vtable);
+}
+
+std::string VTableReader::_readZTS() {
+    auto value = read<int64_t>();
+    // spdlog::debug("\tReading ZTS at {:#x}", value);
+    auto str = readCString(value, 2048);
+    return str.empty() ? str : "_ZTI" + str;
+}
+
+std::string VTableReader::_readZTI() {
+    auto backAddr = cur() + sizeof(int64_t);
+    auto value    = read<int64_t>();
+    if (!isInSection(value, ".data.rel.ro")) { // external
+        if (auto sym = lookupSymbol(value)) return sym->mName;
+        else return {};
     }
-    return {};
-#endif
+    move(value, Begin);
+    move(sizeof(int64_t)); // ignore ZTI
+    auto str = _readZTS();
+    move(backAddr, Begin);
+    return str;
 }
 
 std::optional<VTable> VTableReader::readVTable() {
-    VTable result;
-    auto   vtSym = lookupSymbol(cur());
-    if (!vtSym || !vtSym->mName.starts_with("_ZTV")) {
-        spdlog::error("Failed to reading vtable at {:#x}. [CURRENT_IS_NOT_VTABLE]", cur());
-        return std::nullopt;
+    VTable                     result;
+    std::optional<std::string> symbol;
+    ptrdiff_t                  offset{};
+    std::string                type;
+    if (auto symbol_ = lookupSymbol(cur())) {
+        symbol = symbol_->mName;
+        if (!symbol->starts_with("_ZTV")) {
+            spdlog::error("Failed to reading vtable at {:#x}. [CURRENT_IS_NOT_VTABLE]", cur());
+            return std::nullopt;
+        }
     }
-    result.mName = vtSym->mName;
-    ptrdiff_t  offsetToThis{};
-    Elf64_Addr typeInfoPtr{};
     while (true) {
-        auto value = read<intptr_t>();
+        auto value = read<int64_t>();
         // pre-check
-        if (mPrepared.mTypeInfoBegins.contains(last())) break; // stopped, another typeinfo.
-        if (mPrepared.mLambdaBegins.contains(last())) break;   // stopped, found _ZZZZN.
-        if (isInSection(value, ".rodata")) break;              // stopped, another data.
-        if (isInSection(value, ".data.rel.ro")) break;         // stopped, static member pointer.
-        // read: Header
-        if (value <= 0) {
-            if (result.mSubTables.empty()) { // value == 0 (main table).
+        if (!isInSection(value, ".text")) {
+            // read: Header
+            if (value > 0) break;            // stopped.
+            if (result.mSubTables.empty()) { // value == 0, is main table.
                 if (value != 0) {
                     spdlog::error(
                         "Failed to reading vtable at {:#x} in {}. [ABNORMAL_THIS_OFFSET]",
                         last(),
-                        vtSym->mName
+                        symbol.has_value() ? "<unknown>" : *symbol
                     );
                     return std::nullopt;
                 }
                 // read: TypeInfo
-                typeInfoPtr      = read<Elf64_Addr>(); // todo: Add support for rtti-less image.
-                auto typeInfoSym = lookupSymbol(typeInfoPtr);
-                if (!typeInfoSym || !typeInfoSym->mName.starts_with("_ZTI")) {
-                    spdlog::error(
-                        "Failed to reading vtable at {:#x} in {}. [ABNORMAL_TYPEINFO_PTR]",
-                        last(),
-                        vtSym->mName
-                    );
-                    return std::nullopt;
+                type = _readZTI();
+                if (!type.empty()) {
+                    if (!symbol) symbol = "_ZTV" + type.substr(4); // "_ZTI".length == 4
+                    result.mTypeName = type;
                 }
-                result.mTypeName = typeInfoSym->mName;
-            } else {
-                if (value == 0) {
-                    break; // stopped, another vtable.
-                }
-                offsetToThis = value; // value < 0 (sub table).
-                // check: TypeInfo
-                if (read<Elf64_Addr>() != typeInfoPtr) {
+            } else {                   // value < 0, multi-inherited, is sub table,
+                if (value == 0) break; // stopped, another vtable.
+                offset = value;
+                // check is same typeInfo:
+                if (_readZTI() != type) {
                     spdlog::error(
-                        "Failed to reading vtable at {:#x} in {}. [TYPEINFO_PTR_MISMATCH]",
+                        "Failed to reading vtable at {:#x} in {}. [TYPEINFO_MISMATCH]",
                         last(),
-                        vtSym->mName
+                        symbol.has_value() ? "<unknown>" : *symbol
                     );
                     return std::nullopt;
                 }
@@ -88,12 +124,15 @@ std::optional<VTable> VTableReader::readVTable() {
         }
         // read: Entities
         auto curSym = lookupSymbol(value);
-        if (!curSym) {
-            spdlog::error("Failed to reading vtable at {:#x} in {}. [UNHANDLED_POSITION]", last(), vtSym->mName);
-            return std::nullopt;
-        }
-        result.mSubTables[offsetToThis].emplace_back(VTableColumn{curSym->mName, curSym->mValue});
+        result.mSubTables[offset].emplace_back(
+            VTableColumn{curSym.has_value() ? std::make_optional(curSym->mName) : std::nullopt, curSym->mValue}
+        );
     }
+    if (!symbol) {
+        spdlog::warn("Failed to reading vtable at {:#x} in <unknown>. [NAME_NOT_FOUND]", last());
+        return std::nullopt;
+    }
+    result.mName = *symbol;
     return result;
 }
 
@@ -128,28 +167,7 @@ std::unique_ptr<TypeInfo> VTableReader::readTypeInfo() {
         throw std::runtime_error("For some unknown reason, the reading process stopped.");
     }
 
-    auto readZTS = [this]() -> std::string {
-        auto value = read<int64_t>();
-        // spdlog::debug("\tReading ZTS at {:#x}", value);
-        auto str = readCString(value, 2048);
-        return str.empty() ? str : "_ZTI" + str;
-    };
-
-    auto readZTI = [this, readZTS]() -> std::string {
-        auto backAddr = cur() + sizeof(int64_t);
-        auto value    = read<int64_t>();
-        if (!isInSection(value, ".data.rel.ro")) { // external
-            if (auto sym = lookupSymbol(value)) return sym->mName;
-            else return {};
-        }
-        move(value, Begin);
-        move(sizeof(int64_t)); // ignore ZTI
-        auto str = readZTS();
-        move(backAddr, Begin);
-        return str;
-    };
-
-    auto inheritIndicatorValue = read<int64_t>() - 0x10; // fixme: Why need to do this?
+    auto inheritIndicatorValue = read<int64_t>() - 0x10; // see std::type_info
 
     auto inheritIndicator = lookupSymbol(inheritIndicatorValue);
     if (!inheritIndicator) {
@@ -160,7 +178,7 @@ std::unique_ptr<TypeInfo> VTableReader::readTypeInfo() {
     switch (H(inheritIndicator->mName.c_str())) {
     case H("_ZTVN10__cxxabiv117__class_type_infoE"): {
         auto result   = std::make_unique<NoneInheritTypeInfo>();
-        result->mName = readZTS();
+        result->mName = _readZTS();
         if (result->mName.empty()) {
             spdlog::error("Failed to reading type info at {:#x}. [ABNORMAL_SYMBOL_VALUE]", last());
             return nullptr;
@@ -169,9 +187,9 @@ std::unique_ptr<TypeInfo> VTableReader::readTypeInfo() {
     }
     case H("_ZTVN10__cxxabiv120__si_class_type_infoE"): {
         auto result         = std::make_unique<SingleInheritTypeInfo>();
-        result->mName       = readZTS();
+        result->mName       = _readZTS();
         result->mOffset     = 0x0;
-        result->mParentType = readZTI();
+        result->mParentType = _readZTI();
         if (result->mName.empty() || result->mParentType.empty()) {
             spdlog::error("Failed to reading type info at {:#x}. [ABNORMAL_SYMBOL_VALUE]", last());
             return nullptr;
@@ -180,7 +198,7 @@ std::unique_ptr<TypeInfo> VTableReader::readTypeInfo() {
     }
     case H("_ZTVN10__cxxabiv121__vmi_class_type_infoE"): {
         auto result   = std::make_unique<MultipleInheritTypeInfo>();
-        result->mName = readZTS();
+        result->mName = _readZTS();
         if (result->mName.empty()) {
             spdlog::error("Failed to reading type info at {:#x}. [ABNORMAL_SYMBOL_VALUE]", last());
             return nullptr;
@@ -189,7 +207,7 @@ std::unique_ptr<TypeInfo> VTableReader::readTypeInfo() {
         auto baseCount     = read<unsigned int>();
         for (unsigned int idx = 0; idx < baseCount; idx++) {
             BaseClassInfo baseInfo;
-            baseInfo.mName = readZTI();
+            baseInfo.mName = _readZTI();
             if (baseInfo.mName.empty()) {
                 spdlog::error("Failed to reading type info at {:#x}. [ABNORMAL_SYMBOL_VALUE]", last());
                 return nullptr;
@@ -202,7 +220,7 @@ std::unique_ptr<TypeInfo> VTableReader::readTypeInfo() {
         return result;
     }
     default:
-        spdlog::error("Failed to reading type info at {:#x}. [UNKNOWN_INHERIT_TYPE]", beginAddr);
+        // spdlog::error("Failed to reading type info at {:#x}. [UNKNOWN_INHERIT_TYPE]", beginAddr);
         return nullptr;
     }
 }
@@ -212,7 +230,7 @@ void VTableReader::printDebugString(const VTable& pTable) {
     for (auto& i : pTable.mSubTables) {
         spdlog::info("\tOffset: {:#x}", i.first);
         for (auto& j : i.second) {
-            spdlog::info("\t\t{} ({:#x})", j.mSymbolName, j.mRVA);
+            spdlog::info("\t\t{} ({:#x})", j.mSymbolName.has_value() ? "<unknown>" : *j.mSymbolName, j.mRVA);
         }
     }
 }
@@ -224,8 +242,6 @@ void VTableReader::_prepareData() {
             mPrepared.mVTableBegins.emplace(pSym.mValue);
         } else if (pSym.mName.starts_with("_ZTI")) {
             mPrepared.mTypeInfoBegins.emplace(pSym.mValue);
-        } else if (pSym.mName.starts_with("_ZZZZN")) {
-            mPrepared.mLambdaBegins.emplace(pSym.mValue);
         }
     });
     forEachRelocations([this](const Relocation& pReloc) {

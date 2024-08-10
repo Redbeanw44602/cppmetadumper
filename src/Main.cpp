@@ -45,8 +45,8 @@ JSON read_vtable(VTableReader& reader) {
             auto entities = JSON::array();
             for (auto& k : j.second) {
                 entities.emplace_back(JSON{
-                    {"symbol", k.mSymbolName},
-                    {"rva",    k.mRVA       }
+                    {"symbol", k.mSymbolName.has_value() ? JSON(*k.mSymbolName) : JSON{}},
+                    {"rva",    k.mRVA                                                   }
                 });
             }
             subTables.emplace_back(JSON{

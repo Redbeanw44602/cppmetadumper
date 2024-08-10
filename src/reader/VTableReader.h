@@ -45,8 +45,8 @@ struct MultipleInheritTypeInfo : public TypeInfo {
 };
 
 struct VTableColumn {
-    std::string mSymbolName;
-    Elf64_Addr  mRVA{0};
+    std::optional<std::string> mSymbolName;
+    Elf64_Addr                 mRVA{0};
 };
 
 struct VTable {
@@ -83,9 +83,11 @@ public:
 private:
     void _prepareData();
 
+    std::string _readZTS();
+    std::string _readZTI();
+
     struct PreparedData {
         std::unordered_set<Elf64_Addr> mVTableBegins;
         std::unordered_set<Elf64_Addr> mTypeInfoBegins;
-        std::unordered_set<Elf64_Addr> mLambdaBegins;
     } mPrepared;
 };

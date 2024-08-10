@@ -55,7 +55,7 @@ uint64_t ElfReader::getGapInFront(Elf64_Addr pAddr) const {
     return -1;
 }
 
-bool ElfReader::isInSection(Elf64_Addr pAddr, const char* pSecName) const {
+bool ElfReader::isInSection(Elf64_Addr pAddr, const std::string& pSecName) const {
     auto section = _fetchSection(pSecName);
     return section && section->get_address() < pAddr && (section->get_address() + section->get_size()) > pAddr;
 }
@@ -140,7 +140,12 @@ std::optional<Symbol> ElfReader::getSymbol(uint64_t pIndex) { return getSymbol(_
 
 std::optional<Symbol> ElfReader::getDynSymbol(uint64_t pIndex) { return getSymbol(_fetchSection(".dynsym"), pIndex); }
 
-section* ElfReader::_fetchSection(const char* pSecName) const {
+bool ElfReader::moveToSection(const std::string& pName) {
+    auto section = _fetchSection(pName);
+    return section && move(section->get_address(), Begin);
+}
+
+section* ElfReader::_fetchSection(const std::string& pSecName) const {
     for (auto& sec : mImage.sections) {
         if (sec->get_name() == pSecName) {
             return sec.get();

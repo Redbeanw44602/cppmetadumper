@@ -54,7 +54,7 @@ public:
 protected:
     [[nodiscard]] Elf64_Addr getEndOfSections() const;
     [[nodiscard]] uint64_t   getGapInFront(Elf64_Addr pAddr) const;
-    [[nodiscard]] bool       isInSection(Elf64_Addr pAddr, const char* pSecName) const;
+    [[nodiscard]] bool       isInSection(Elf64_Addr pAddr, const std::string& pSecName) const;
 
     bool forEachSymbolTable(ELFIO::section* pSec, const std::function<void(uint64_t, Symbol)>& pCall);
 
@@ -71,10 +71,12 @@ protected:
 
     std::optional<Symbol> getDynSymbol(uint64_t pIndex);
 
+    bool moveToSection(const std::string& pName);
+
     ptrdiff_t getReadOffset(Elf64_Addr pAddr) override { return -(ptrdiff_t)getGapInFront(pAddr); }
 
 private:
-    ELFIO::section* _fetchSection(const char* pSecName) const;
+    ELFIO::section* _fetchSection(const std::string& pSecName) const;
 
     void _relocateReadonlyData();
     void _buildSymbolCache();
