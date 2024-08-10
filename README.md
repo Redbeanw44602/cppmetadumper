@@ -15,7 +15,7 @@ Optional arguments:
 ```
 If I now need to extract RTTI information from `libsample.so`:
 ```bash
-./VTable-Exporter "libsample.so" -o "sample.json"
+./cppmetadumper "libsample.so" -o "sample.json"
 ```
 The resulting will be saved in JSON format.  
 
@@ -28,10 +28,10 @@ The resulting will be saved in JSON format.
 ## TODOs
  - [ ] Mach-O support.
  - [ ] PE support.
- - [ ] Parsing vbtable.
 
 ## For GCC/Clang compilation results
  - At least one of the symbol table or RTTI is required to properly identify and export the vftable.
+ - 
 
 ## Known issues
  - The vftable export result is not guaranteed to be completely correct.
