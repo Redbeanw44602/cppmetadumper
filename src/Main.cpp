@@ -2,13 +2,17 @@
 // Created by RedbeanW on 2023/7/27.
 //
 
-#include "Base.h"
-#include "reader/VTableReader.h"
+#include "base/Base.h"
+
+#include "reader/elf/VTableReader.h"
 
 #include <argparse/argparse.hpp>
 #include <nlohmann/json.hpp>
 
 using JSON = nlohmann::json;
+
+using namespace metadumper;
+using namespace metadumper::elf;
 
 std::tuple<std::string, std::string> init_program(int argc, char* argv[]) {
     argparse::ArgumentParser args("cppmetadumper", "2.0.0");

@@ -6,11 +6,11 @@
 
 #include "Base.h"
 
-#define READER_UNREACHABLE
+METADUMPER_BEGIN
 
-class Reader {
+class Loader {
 public:
-    explicit Reader(const std::string& pPath);
+    explicit Loader(const std::string& pPath);
 
     [[nodiscard]] bool isValid() const;
 
@@ -69,7 +69,7 @@ protected:
 
     inline uintptr_t last() { return cur() - mLastOperated; }
 
-    inline bool move(int64_t pPos, RelativePos pRel = Current) {
+    inline bool move(intptr_t pPos, RelativePos pRel = Current) {
         mStream.seekp(pPos, (std::ios_base::seekdir)pRel);
         mStream.seekg(pPos, (std::ios_base::seekdir)pRel);
         return mStream.good();
@@ -82,5 +82,7 @@ protected:
 private:
     std::stringstream mStream;
 
-    uint64_t mLastOperated{0};
+    size_t mLastOperated{0};
 };
+
+METADUMPER_END

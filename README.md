@@ -28,10 +28,11 @@ The resulting will be saved in JSON format.
 ## TODOs
  - [ ] Mach-O support.
  - [ ] PE support.
+ - [ ] Virtual inheritance support.
 
 ## For GCC/Clang compilation results
  - At least one of the symbol table or RTTI is required to properly identify and export the vftable.
- - 
+ - If a symbol table is not provided, some unusual styles of vftables will not be recognized.
 
 ## Known issues
  - The vftable export result is not guaranteed to be completely correct.

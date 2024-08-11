@@ -3,9 +3,12 @@
 //
 
 #include "VTableReader.h"
-#include <cstdint>
 
-VTableReader::VTableReader(const std::string& pPath) : ElfReader(pPath) { _prepareData(); }
+#include "util/Hash.h"
+
+METADUMPER_ELF_BEGIN
+
+VTableReader::VTableReader(const std::string& pPath) : ELF(pPath) { _prepareData(); }
 
 DumpVFTableResult VTableReader::dumpVFTable() {
     DumpVFTableResult result;
@@ -29,24 +32,22 @@ DumpVFTableResult VTableReader::dumpVFTable() {
         spdlog::error("Unable to move to target section.");
         return result;
     }
-    move(sizeof(int64_t));
 
     while (isInSection(cur(), ".data.rel.ro")) {
         auto backAddr = cur();
-        auto expect1  = read<int64_t>();
-        auto expect2  = read<int64_t>();
-        auto expect3  = read<int64_t>();
+        auto expect1  = read<intptr_t>();
+        auto expect2  = read<intptr_t>();
+        auto expect3  = read<intptr_t>();
         move(backAddr, Begin);
         if (expect1 == 0 && (expect2 == 0 || mPrepared.mTypeInfoBegins.contains(expect2))
             && isInSection(expect3, ".text")) {
-
             auto vt = readVTable();
             if (vt) {
                 result.mVFTable.emplace_back(*vt);
                 result.mParsed++;
             }
         } else {
-            move(sizeof(int64_t));
+            move(sizeof(intptr_t));
         }
     }
 
@@ -54,21 +55,21 @@ DumpVFTableResult VTableReader::dumpVFTable() {
 }
 
 std::string VTableReader::_readZTS() {
-    auto value = read<int64_t>();
+    auto value = read<intptr_t>();
     // spdlog::debug("\tReading ZTS at {:#x}", value);
     auto str = readCString(value, 2048);
     return str.empty() ? str : "_ZTI" + str;
 }
 
 std::string VTableReader::_readZTI() {
-    auto backAddr = cur() + sizeof(int64_t);
-    auto value    = read<int64_t>();
+    auto backAddr = cur() + sizeof(intptr_t);
+    auto value    = read<intptr_t>();
     if (!isInSection(value, ".data.rel.ro")) { // external
         if (auto sym = lookupSymbol(value)) return sym->mName;
         else return {};
     }
     move(value, Begin);
-    move(sizeof(int64_t)); // ignore ZTI
+    move(sizeof(intptr_t)); // ignore ZTI
     auto str = _readZTS();
     move(backAddr, Begin);
     return str;
@@ -87,7 +88,7 @@ std::optional<VTable> VTableReader::readVTable() {
         }
     }
     while (true) {
-        auto value = read<int64_t>();
+        auto value = read<intptr_t>();
         // pre-check
         if (!isInSection(value, ".text")) {
             // read: Header
@@ -97,7 +98,7 @@ std::optional<VTable> VTableReader::readVTable() {
                     spdlog::error(
                         "Failed to reading vtable at {:#x} in {}. [ABNORMAL_THIS_OFFSET]",
                         last(),
-                        symbol.has_value() ? "<unknown>" : *symbol
+                        symbol.has_value() ? *symbol : "<unknown>"
                     );
                     return std::nullopt;
                 }
@@ -167,7 +168,7 @@ std::unique_ptr<TypeInfo> VTableReader::readTypeInfo() {
         throw std::runtime_error("For some unknown reason, the reading process stopped.");
     }
 
-    auto inheritIndicatorValue = read<int64_t>() - 0x10; // see std::type_info
+    auto inheritIndicatorValue = read<intptr_t>() - 0x10; // see std::type_info
 
     auto inheritIndicator = lookupSymbol(inheritIndicatorValue);
     if (!inheritIndicator) {
@@ -237,7 +238,7 @@ void VTableReader::printDebugString(const VTable& pTable) {
 
 void VTableReader::_prepareData() {
     if (!mIsValid) return;
-    forEachSymbols([this](uint64_t pIndex, const Symbol& pSym) {
+    forEachSymbols([this](uintptr_t pIndex, const Symbol& pSym) {
         if (pSym.mName.starts_with("_ZTV")) {
             mPrepared.mVTableBegins.emplace(pSym.mValue);
         } else if (pSym.mName.starts_with("_ZTI")) {
@@ -284,4 +285,5 @@ void VTableReader::printDebugString(const std::unique_ptr<TypeInfo>& pType) {
     }
     }
 }
-#define U
+
+METADUMPER_ELF_END

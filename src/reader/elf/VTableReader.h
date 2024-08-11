@@ -4,10 +4,14 @@
 
 #pragma once
 
-#include "ElfReader.h"
+#include "base/Base.h"
+
+#include "ELF.h"
 
 #include <map>
 #include <unordered_set>
+
+METADUMPER_ELF_BEGIN
 
 enum class TypeInheritKind { None, Single, Multiple };
 
@@ -46,7 +50,7 @@ struct MultipleInheritTypeInfo : public TypeInfo {
 
 struct VTableColumn {
     std::optional<std::string> mSymbolName;
-    Elf64_Addr                 mRVA{0};
+    uintptr_t                  mRVA{0};
 };
 
 struct VTable {
@@ -67,7 +71,7 @@ struct DumpTypeInfoResult {
     std::vector<std::unique_ptr<TypeInfo>> mTypeInfo;
 };
 
-class VTableReader : public ElfReader {
+class VTableReader : public ELF {
 public:
     explicit VTableReader(const std::string& pPath);
 
@@ -87,7 +91,9 @@ private:
     std::string _readZTI();
 
     struct PreparedData {
-        std::unordered_set<Elf64_Addr> mVTableBegins;
-        std::unordered_set<Elf64_Addr> mTypeInfoBegins;
+        std::unordered_set<uintptr_t> mVTableBegins;
+        std::unordered_set<uintptr_t> mTypeInfoBegins;
     } mPrepared;
 };
+
+METADUMPER_ELF_END
