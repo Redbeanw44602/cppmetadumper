@@ -3,13 +3,18 @@
 //
 
 #include "ELF.h"
+#include <LIEF/ELF/Section.hpp>
 
-using namespace ELFIO;
+// #define DEBUG_DUMP_SECTION
+#ifdef DEBUG_DUMP_SECTION
+#include <fstream>
+#endif
 
 METADUMPER_ELF_BEGIN
 
 ELF::ELF(const std::string& pPath) : Loader(pPath) {
-    if (!mImage.load(pPath)) { // todo: Find better solution.
+    mImage = LIEF::ELF::Parser::parse(pPath);
+    if (!mImage) {
         spdlog::error("Failed to load elf image.");
         mIsValid = false;
         return;
@@ -20,8 +25,8 @@ ELF::ELF(const std::string& pPath) : Loader(pPath) {
 
 uintptr_t ELF::getEndOfSections() const {
     uintptr_t ret = 0;
-    for (auto& sec : mImage.sections) {
-        auto end = sec->get_address() + sec->get_size();
+    for (auto& sec : mImage->sections()) {
+        auto end = sec.virtual_address() + sec.size();
         if (ret < end) {
             ret = end;
         }
@@ -29,27 +34,14 @@ uintptr_t ELF::getEndOfSections() const {
     return ret;
 }
 
-Architecture ELF::getArchitecture() const {
-    switch (mImage.get_machine()) {
-    case EM_X86_64:
-        return Architecture::X86_64;
-    case EM_AARCH64:
-        return Architecture::AArch64;
-    default:
-        return Architecture::Unsupported;
-    }
-}
-
 size_t ELF::getGapInFront(uintptr_t pAddr) const {
     enum { LOAD = 1 };
     size_t ret;
-    for (auto& seg : mImage.segments) {
-        if (seg->get_type() != LOAD) {
-            continue;
-        }
-        auto begin = seg->get_virtual_address();
-        ret        = begin - seg->get_offset();
-        if (pAddr >= begin && pAddr < begin + seg->get_memory_size()) {
+    for (auto& segment : mImage->segments()) {
+        if (!segment.is_load()) continue;
+        auto begin = segment.virtual_address();
+        ret        = begin - segment.file_offset();
+        if (pAddr >= begin && pAddr < begin + segment.virtual_size()) {
             return ret;
         }
     }
@@ -58,102 +50,25 @@ size_t ELF::getGapInFront(uintptr_t pAddr) const {
 }
 
 bool ELF::isInSection(uintptr_t pAddr, const std::string& pSecName) const {
-    auto section = _fetchSection(pSecName);
-    return section && section->get_address() <= pAddr && (section->get_address() + section->get_size()) > pAddr;
-}
-bool ELF::forEachSymbolTable(ELFIO::section* pSec, const std::function<void(size_t, Symbol)>& pCall) {
-    if (!pSec) return false;
-    symbol_section_accessor accessor(mImage, pSec);
-    if (accessor.get_symbols_num() <= 0) return false;
-    for (size_t idx = 0; idx < accessor.get_symbols_num(); ++idx) {
-        std::string   name;
-        Elf64_Addr    value;
-        Elf_Xword     size;
-        unsigned char bind;
-        unsigned char type;
-        Elf_Half      sectionIndex;
-        unsigned char other;
-        if (accessor.get_symbol(idx, name, value, size, bind, type, sectionIndex, other)) {
-            pCall(idx, Symbol{name, value, size, bind, type, sectionIndex, other});
-        }
-    }
-    return true;
+    auto section = mImage->get_section(pSecName);
+    return section && section->virtual_address() <= pAddr && (section->virtual_address() + section->size()) > pAddr;
 }
 
-bool ELF::forEachSymbols(const std::function<void(size_t, Symbol)>& pCall) {
-    return forEachSymbolTable(_fetchSection(".symtab"), pCall);
+LIEF::ELF::Symbol* ELF::lookupSymbol(uintptr_t pAddr) {
+    if (mSymbolCache.mFromValue.contains(pAddr)) return mSymbolCache.mFromValue.at(pAddr);
+    if (mDynSymbolCache.mFromValue.contains(pAddr)) return mDynSymbolCache.mFromValue.at(pAddr);
+    return nullptr;
 }
 
-bool ELF::forEachDynSymbols(const std::function<void(size_t, Symbol)>& pCall) {
-    return forEachSymbolTable(_fetchSection(".dynsym"), pCall);
+LIEF::ELF::Symbol* ELF::lookupSymbol(const std::string& pName) {
+    if (mSymbolCache.mFromName.contains(pName)) return mSymbolCache.mFromName.at(pName);
+    if (mDynSymbolCache.mFromName.contains(pName)) return mDynSymbolCache.mFromName.at(pName);
+    return nullptr;
 }
-
-bool ELF::forEachRelocations(const std::function<void(Relocation)>& pCall) {
-    // todo: relaPlt
-    section* relaDyn;
-    if (!(relaDyn = _fetchSection(".rela.dyn"))) {
-        return false;
-    }
-    const relocation_section_accessor accessor(mImage, relaDyn);
-    for (size_t idx = 0; idx < accessor.get_entries_num(); ++idx) {
-        Elf64_Addr offset{};
-        Elf_Word   symbol{};
-        unsigned   type{};
-        Elf_Sxword addend{};
-        if (accessor.get_entry(idx, offset, symbol, type, addend)) {
-            pCall(Relocation{offset, symbol, type, addend});
-        }
-    }
-    return true;
-}
-
-std::optional<Symbol> ELF::lookupSymbol(uintptr_t pAddr) {
-    if (mSymbolCache.mFromValue.contains(pAddr)) return getSymbol(mSymbolCache.mFromValue.at(pAddr));
-    if (mDynSymbolCache.mFromValue.contains(pAddr)) return getDynSymbol(mDynSymbolCache.mFromValue.at(pAddr));
-    return std::nullopt;
-}
-
-std::optional<Symbol> ELF::lookupSymbol(const std::string& pName) {
-    if (mSymbolCache.mFromName.contains(pName)) return getSymbol(mSymbolCache.mFromName.at(pName));
-    if (mDynSymbolCache.mFromName.contains(pName)) return getDynSymbol(mDynSymbolCache.mFromName.at(pName));
-    return std::nullopt;
-}
-
-std::optional<Symbol> ELF::getSymbol(ELFIO::section* pSec, size_t pIndex) {
-    if (!pSec) return std::nullopt;
-    Symbol                  result;
-    symbol_section_accessor accessor(mImage, pSec);
-    if (!accessor.get_symbol(
-            pIndex,
-            result.mName,
-            result.mValue,
-            result.mSize,
-            result.mBind,
-            result.mType,
-            result.mSectionIndex,
-            result.mOther
-        )) {
-        return std::nullopt;
-    }
-    return result;
-}
-
-std::optional<Symbol> ELF::getSymbol(size_t pIndex) { return getSymbol(_fetchSection(".symtab"), pIndex); }
-
-std::optional<Symbol> ELF::getDynSymbol(size_t pIndex) { return getSymbol(_fetchSection(".dynsym"), pIndex); }
 
 bool ELF::moveToSection(const std::string& pName) {
-    auto section = _fetchSection(pName);
-    return section && move(section->get_address(), Begin);
-}
-
-section* ELF::_fetchSection(const std::string& pSecName) const {
-    for (auto& sec : mImage.sections) {
-        if (sec->get_name() == pSecName) {
-            return sec.get();
-        }
-    }
-    return nullptr;
+    auto section = mImage->get_section(pName);
+    return section && move(section->virtual_address(), Begin);
 }
 
 void ELF::_relocateReadonlyData() {
@@ -161,60 +76,63 @@ void ELF::_relocateReadonlyData() {
     // https://github.com/ARM-software/abi-aa/releases/download/2023Q1/aaelf64.pdf
     // https://refspecs.linuxfoundation.org/elf/elf.pdf
 
-    section* roData;
-    if (!(roData = _fetchSection(".data.rel.ro"))) {
+    LIEF::ELF::Section* roData;
+    if (!(roData = mImage->get_section(".data.rel.ro"))) {
         return;
     }
 
-    const auto begin      = roData->get_address();
-    const auto end        = begin + roData->get_size();
+    const auto begin      = roData->virtual_address();
+    const auto end        = begin + roData->size();
     const auto EOS        = getEndOfSections();
     const auto gapInFront = getGapInFront(begin);
 
-    forEachRelocations([&](const Relocation& pRel) {
-        if (pRel.mOffset < begin || pRel.mOffset > end) {
-            return;
+    for (auto& relocation : mImage->dynamic_relocations()) {
+        auto address = relocation.address();
+        if (address < begin || address > end) {
+            continue;
         }
-        auto offset = pRel.mOffset - gapInFront;
-        auto type   = ELF64_R_TYPE(pRel.mType);
+        auto offset = address - gapInFront;
+        auto type   = relocation.type();
+        using RELOC = LIEF::ELF::Relocation::TYPE;
         switch (type) {
-        case R_X86_64_64:
-        case R_AARCH64_ABS64: {
-            auto symbol = getDynSymbol(pRel.mSymbolIndex);
+        case RELOC::X86_64_64:
+        case RELOC::AARCH64_ABS64: {
+            auto symbol = relocation.symbol();
             if (symbol) {
-                if (symbol->mValue) {
+                if (symbol->value()) {
                     // Internal Symbol
-                    write<uintptr_t, false>(offset, symbol->mValue + pRel.mAddend);
+                    write<uintptr_t, false>(offset, symbol->value() + relocation.addend());
                 } else {
                     // External Symbol
                     // fixme: Deviations may occur, although this does not affect data export.
-                    write<uintptr_t, false>(offset, EOS + pRel.mSymbolIndex * sizeof(intptr_t) + pRel.mAddend);
+                    write<uintptr_t, false>(
+                        offset,
+                        EOS + mImage->dynsym_idx(*symbol) * sizeof(intptr_t) + relocation.addend()
+                    );
                 }
             } else {
                 spdlog::error("Get dynamic symbol failed!");
             }
             break;
         }
-        case R_X86_64_RELATIVE:
-        case R_AARCH64_RELATIVE: {
-            if (!pRel.mSymbolIndex) {
-                if (!pRel.mAddend) {
+        case RELOC::X86_64_RELATIVE:
+        case RELOC::AARCH64_RELATIVE: {
+            if (relocation.has_symbol()) {
+                if (!relocation.addend()) {
                     spdlog::warn("Unknown type of ADDEND detected.");
                 }
-                write<uintptr_t, false>(offset, pRel.mAddend);
+                write<uintptr_t, false>(offset, relocation.addend());
             } else {
                 // External
                 spdlog::warn("Unhandled type of RELATIVE detected.");
             }
             break;
         }
-        case R_AMDGPU_REL64:
-            // TODO
         default:
-            spdlog::warn("Unhandled relocation type: {}.", type);
+            spdlog::warn("Unhandled relocation type: {}.", (uint32_t)type);
             break;
         }
-    });
+    }
 #ifdef DEBUG_DUMP_SECTION
     std::ofstream d_Dumper("relro.fixed.dump", std::ios::binary | std::ios::trunc);
     if (d_Dumper.is_open()) {
@@ -231,20 +149,29 @@ void ELF::_relocateReadonlyData() {
 }
 
 void ELF::_buildSymbolCache() {
-
     if (!mIsValid) return;
 
-    if (!forEachSymbols([this](size_t index, const Symbol& symbol) {
-            mSymbolCache.mFromName.try_emplace(symbol.mName, index);
-            mSymbolCache.mFromValue.try_emplace(symbol.mValue, index);
-        })) {
+    if (mImage->has(LIEF::ELF::Section::TYPE::SYMTAB)) {
+        for (auto& symbol : mImage->symtab_symbols()) {
+            mSymbolCache.mFromName.try_emplace(symbol.name(), &symbol);
+            mSymbolCache.mFromValue.try_emplace(symbol.value(), &symbol);
+        }
+    } else {
         spdlog::warn(".symtab not found in this image!");
     }
 
-    if (!forEachDynSymbols([this](size_t index, const Symbol& symbol) {
-            mDynSymbolCache.mFromName.try_emplace(symbol.mName, index);
-            mDynSymbolCache.mFromValue.try_emplace(getEndOfSections() + sizeof(intptr_t) * index, index);
-        })) {
+    if (mImage->has(LIEF::ELF::Section::TYPE::DYNSYM)) {
+        for (auto& symbol : mImage->dynamic_symbols()) {
+            if (symbol.name() == "_ZTVN10__cxxabiv121__vmi_class_type_infoE") {
+                spdlog::warn(".....");
+            }
+            mDynSymbolCache.mFromName.try_emplace(symbol.name(), &symbol);
+            mDynSymbolCache.mFromValue.try_emplace(
+                getEndOfSections() + sizeof(intptr_t) * mImage->dynsym_idx(symbol),
+                &symbol
+            );
+        }
+    } else {
         spdlog::warn(".dynsym not found in this image!");
     }
 }

@@ -9,10 +9,11 @@
 #include <argparse/argparse.hpp>
 #include <nlohmann/json.hpp>
 
+#include <fstream>
+
 using JSON = nlohmann::json;
 
 using namespace metadumper;
-using namespace metadumper::elf;
 
 std::tuple<std::string, std::string> init_program(int argc, char* argv[]) {
     argparse::ArgumentParser args("cppmetadumper", "2.0.0");
@@ -40,7 +41,7 @@ void init_logger() {
     spdlog::set_default_logger(logger);
 }
 
-JSON read_vtable(VTableReader& reader) {
+JSON read_vtable(elf::VTableReader& reader) {
     JSON result;
     auto resultVft = reader.dumpVFTable();
     for (auto& i : resultVft.mVFTable) {
@@ -76,21 +77,21 @@ JSON read_vtable(VTableReader& reader) {
     return result;
 }
 
-JSON read_typeinfo(VTableReader& reader) {
+JSON read_typeinfo(elf::VTableReader& reader) {
     JSON result;
     auto resultTyp = reader.dumpTypeInfo();
     for (auto& type : resultTyp.mTypeInfo) {
         if (!type) continue;
         switch (type->kind()) {
-        case TypeInheritKind::None: {
-            auto typeInfo           = (NoneInheritTypeInfo*)type.get();
+        case elf::TypeInheritKind::None: {
+            auto typeInfo           = (elf::NoneInheritTypeInfo*)type.get();
             result[typeInfo->mName] = {
                 {"inherit_type", "None"}
             };
             break;
         }
-        case TypeInheritKind::Single: {
-            auto typeInfo           = (SingleInheritTypeInfo*)type.get();
+        case elf::TypeInheritKind::Single: {
+            auto typeInfo           = (elf::SingleInheritTypeInfo*)type.get();
             result[typeInfo->mName] = {
                 {"inherit_type", "Single"             },
                 {"parent_type",  typeInfo->mParentType},
@@ -98,8 +99,8 @@ JSON read_typeinfo(VTableReader& reader) {
             };
             break;
         }
-        case TypeInheritKind::Multiple: {
-            auto typeInfo    = (MultipleInheritTypeInfo*)type.get();
+        case elf::TypeInheritKind::Multiple: {
+            auto typeInfo    = (elf::MultipleInheritTypeInfo*)type.get();
             auto baseClasses = JSON::array();
             for (auto& base : typeInfo->mBaseClasses) {
                 baseClasses.emplace_back(JSON{
@@ -154,11 +155,11 @@ int main(int argc, char* argv[]) {
         outputFileBase.erase(outputFileBase.size() - 5, 5);
     }
 
-    VTableReader reader(inputFileName);
+    elf::VTableReader reader(inputFileName);
     if (!reader.isValid()) return -1;
 
     spdlog::info("{:<12}{}", "Input file:", inputFileName);
-    spdlog::info("{:<12}{} for {}", "Format:", "ELF64", arch2str(reader.getArchitecture()));
+    spdlog::info("{:<12}{} for {}", "Format:", "ELF64", "TEST");
 
     auto jsonVft = read_vtable(reader);
     auto jsonTyp = read_typeinfo(reader);

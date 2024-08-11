@@ -65,7 +65,7 @@ std::string VTableReader::_readZTI() {
     auto backAddr = cur() + sizeof(intptr_t);
     auto value    = read<intptr_t>();
     if (!isInSection(value, ".data.rel.ro")) { // external
-        if (auto sym = lookupSymbol(value)) return sym->mName;
+        if (auto sym = lookupSymbol(value)) return sym->name();
         else return {};
     }
     move(value, Begin);
@@ -81,7 +81,7 @@ std::optional<VTable> VTableReader::readVTable() {
     ptrdiff_t                  offset{};
     std::string                type;
     if (auto symbol_ = lookupSymbol(cur())) {
-        symbol = symbol_->mName;
+        symbol = symbol_->name();
         if (!symbol->starts_with("_ZTV")) {
             spdlog::error("Failed to reading vtable at {:#x}. [CURRENT_IS_NOT_VTABLE]", cur());
             return std::nullopt;
@@ -126,7 +126,7 @@ std::optional<VTable> VTableReader::readVTable() {
         // read: Entities
         auto curSym = lookupSymbol(value);
         result.mSubTables[offset].emplace_back(
-            VTableColumn{curSym.has_value() ? std::make_optional(curSym->mName) : std::nullopt, curSym->mValue}
+            VTableColumn{curSym ? std::make_optional(curSym->name()) : std::nullopt, (uintptr_t)value}
         );
     }
     if (!symbol) {
@@ -176,7 +176,7 @@ std::unique_ptr<TypeInfo> VTableReader::readTypeInfo() {
         return nullptr;
     }
     // spdlog::debug("Processing: {:#x}", beginAddr);
-    switch (H(inheritIndicator->mName.c_str())) {
+    switch (H(inheritIndicator->name().c_str())) {
     case H("_ZTVN10__cxxabiv117__class_type_infoE"): {
         auto result   = std::make_unique<NoneInheritTypeInfo>();
         result->mName = _readZTS();
@@ -238,23 +238,22 @@ void VTableReader::printDebugString(const VTable& pTable) {
 
 void VTableReader::_prepareData() {
     if (!mIsValid) return;
-    forEachSymbols([this](size_t pIndex, const Symbol& pSym) {
-        if (pSym.mName.starts_with("_ZTV")) {
-            mPrepared.mVTableBegins.emplace(pSym.mValue);
-        } else if (pSym.mName.starts_with("_ZTI")) {
-            mPrepared.mTypeInfoBegins.emplace(pSym.mValue);
+    for (auto& symbol : mImage->symtab_symbols()) {
+        if (symbol.name().starts_with("_ZTV")) {
+            mPrepared.mVTableBegins.emplace(symbol.value());
+        } else if (symbol.name().starts_with("_ZTI")) {
+            mPrepared.mTypeInfoBegins.emplace(symbol.value());
         }
-    });
-    forEachRelocations([this](const Relocation& pReloc) {
-        auto symbol = getDynSymbol(pReloc.mSymbolIndex);
-        if (!symbol) return;
-        switch (H(symbol->mName.c_str())) {
+    }
+    for (auto& relocation : mImage->dynamic_relocations()) {
+        if (!relocation.has_symbol()) return;
+        switch (H(relocation.symbol()->name().c_str())) {
         case H("_ZTVN10__cxxabiv117__class_type_infoE"):
         case H("_ZTVN10__cxxabiv120__si_class_type_infoE"):
         case H("_ZTVN10__cxxabiv121__vmi_class_type_infoE"):
-            mPrepared.mTypeInfoBegins.emplace(pReloc.mOffset);
+            mPrepared.mTypeInfoBegins.emplace(relocation.address());
         }
-    });
+    }
 }
 
 void VTableReader::printDebugString(const std::unique_ptr<TypeInfo>& pType) {
