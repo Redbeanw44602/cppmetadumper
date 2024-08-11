@@ -35,7 +35,6 @@ uintptr_t ELF::getEndOfSections() const {
 }
 
 size_t ELF::getGapInFront(uintptr_t pAddr) const {
-    enum { LOAD = 1 };
     size_t ret;
     for (auto& segment : mImage->segments()) {
         if (!segment.is_load()) continue;
@@ -162,9 +161,6 @@ void ELF::_buildSymbolCache() {
 
     if (mImage->has(LIEF::ELF::Section::TYPE::DYNSYM)) {
         for (auto& symbol : mImage->dynamic_symbols()) {
-            if (symbol.name() == "_ZTVN10__cxxabiv121__vmi_class_type_infoE") {
-                spdlog::warn(".....");
-            }
             mDynSymbolCache.mFromName.try_emplace(symbol.name(), &symbol);
             mDynSymbolCache.mFromValue.try_emplace(
                 getEndOfSections() + sizeof(intptr_t) * mImage->dynsym_idx(symbol),

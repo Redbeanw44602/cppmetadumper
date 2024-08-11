@@ -7,6 +7,7 @@
 #include "reader/elf/VTableReader.h"
 
 #include <argparse/argparse.hpp>
+#include <magic_enum.hpp>
 #include <nlohmann/json.hpp>
 
 #include <fstream>
@@ -159,7 +160,12 @@ int main(int argc, char* argv[]) {
     if (!reader.isValid()) return -1;
 
     spdlog::info("{:<12}{}", "Input file:", inputFileName);
-    spdlog::info("{:<12}{} for {}", "Format:", "ELF64", "TEST");
+    spdlog::info(
+        "{:<12}{} for {}",
+        "Format:",
+        magic_enum::enum_name(reader.getType()),
+        magic_enum::enum_name(reader.getMachine())
+    );
 
     auto jsonVft = read_vtable(reader);
     auto jsonTyp = read_typeinfo(reader);
