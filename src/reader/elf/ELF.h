@@ -50,20 +50,20 @@ public:
 
 protected:
     [[nodiscard]] uintptr_t getEndOfSections() const;
-    [[nodiscard]] uintptr_t getGapInFront(uintptr_t pAddr) const;
+    [[nodiscard]] size_t    getGapInFront(uintptr_t pAddr) const;
     [[nodiscard]] bool      isInSection(uintptr_t pAddr, const std::string& pSecName) const;
 
-    bool forEachSymbolTable(ELFIO::section* pSec, const std::function<void(uintptr_t, Symbol)>& pCall);
+    bool forEachSymbolTable(ELFIO::section* pSec, const std::function<void(size_t, Symbol)>& pCall);
 
-    bool forEachSymbols(const std::function<void(uintptr_t, Symbol)>& pCall);
-    bool forEachDynSymbols(const std::function<void(uintptr_t, Symbol)>& pCall);
+    bool forEachSymbols(const std::function<void(size_t, Symbol)>& pCall);
+    bool forEachDynSymbols(const std::function<void(size_t, Symbol)>& pCall);
 
     bool forEachRelocations(const std::function<void(Relocation)>& pCall);
 
     std::optional<Symbol> lookupSymbol(uintptr_t pAddr);
     std::optional<Symbol> lookupSymbol(const std::string& pName);
 
-    std::optional<Symbol> getSymbol(ELFIO::section* pSec, uintptr_t pIndex);
+    std::optional<Symbol> getSymbol(ELFIO::section* pSec, size_t pIndex);
     std::optional<Symbol> getSymbol(uintptr_t pIndex);
 
     std::optional<Symbol> getDynSymbol(uintptr_t pIndex);
@@ -81,8 +81,8 @@ private:
     ELFIO::elfio mImage;
 
     struct SymbolCache {
-        std::unordered_map<std::string, uintptr_t> mFromName;
-        std::unordered_map<uintptr_t, uintptr_t>   mFromValue;
+        std::unordered_map<std::string, size_t> mFromName;
+        std::unordered_map<uintptr_t, size_t>   mFromValue;
     };
 
     SymbolCache mSymbolCache;

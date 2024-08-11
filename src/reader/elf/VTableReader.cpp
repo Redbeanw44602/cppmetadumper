@@ -238,7 +238,7 @@ void VTableReader::printDebugString(const VTable& pTable) {
 
 void VTableReader::_prepareData() {
     if (!mIsValid) return;
-    forEachSymbols([this](uintptr_t pIndex, const Symbol& pSym) {
+    forEachSymbols([this](size_t pIndex, const Symbol& pSym) {
         if (pSym.mName.starts_with("_ZTV")) {
             mPrepared.mVTableBegins.emplace(pSym.mValue);
         } else if (pSym.mName.starts_with("_ZTI")) {

@@ -40,17 +40,17 @@ Architecture ELF::getArchitecture() const {
     }
 }
 
-uintptr_t ELF::getGapInFront(uintptr_t pAddr) const {
+size_t ELF::getGapInFront(uintptr_t pAddr) const {
     enum { LOAD = 1 };
-    uintptr_t gap;
+    size_t ret;
     for (auto& seg : mImage.segments) {
         if (seg->get_type() != LOAD) {
             continue;
         }
         auto begin = seg->get_virtual_address();
-        gap        = begin - seg->get_offset();
+        ret        = begin - seg->get_offset();
         if (pAddr >= begin && pAddr < begin + seg->get_memory_size()) {
-            return gap;
+            return ret;
         }
     }
     spdlog::error("An exception occurred during gap calculation!");
@@ -61,7 +61,7 @@ bool ELF::isInSection(uintptr_t pAddr, const std::string& pSecName) const {
     auto section = _fetchSection(pSecName);
     return section && section->get_address() <= pAddr && (section->get_address() + section->get_size()) > pAddr;
 }
-bool ELF::forEachSymbolTable(ELFIO::section* pSec, const std::function<void(uintptr_t, Symbol)>& pCall) {
+bool ELF::forEachSymbolTable(ELFIO::section* pSec, const std::function<void(size_t, Symbol)>& pCall) {
     if (!pSec) return false;
     symbol_section_accessor accessor(mImage, pSec);
     if (accessor.get_symbols_num() <= 0) return false;
@@ -80,11 +80,11 @@ bool ELF::forEachSymbolTable(ELFIO::section* pSec, const std::function<void(uint
     return true;
 }
 
-bool ELF::forEachSymbols(const std::function<void(uintptr_t, Symbol)>& pCall) {
+bool ELF::forEachSymbols(const std::function<void(size_t, Symbol)>& pCall) {
     return forEachSymbolTable(_fetchSection(".symtab"), pCall);
 }
 
-bool ELF::forEachDynSymbols(const std::function<void(uintptr_t, Symbol)>& pCall) {
+bool ELF::forEachDynSymbols(const std::function<void(size_t, Symbol)>& pCall) {
     return forEachSymbolTable(_fetchSection(".dynsym"), pCall);
 }
 
@@ -119,7 +119,7 @@ std::optional<Symbol> ELF::lookupSymbol(const std::string& pName) {
     return std::nullopt;
 }
 
-std::optional<Symbol> ELF::getSymbol(ELFIO::section* pSec, uintptr_t pIndex) {
+std::optional<Symbol> ELF::getSymbol(ELFIO::section* pSec, size_t pIndex) {
     if (!pSec) return std::nullopt;
     Symbol                  result;
     symbol_section_accessor accessor(mImage, pSec);
@@ -138,9 +138,9 @@ std::optional<Symbol> ELF::getSymbol(ELFIO::section* pSec, uintptr_t pIndex) {
     return result;
 }
 
-std::optional<Symbol> ELF::getSymbol(uintptr_t pIndex) { return getSymbol(_fetchSection(".symtab"), pIndex); }
+std::optional<Symbol> ELF::getSymbol(size_t pIndex) { return getSymbol(_fetchSection(".symtab"), pIndex); }
 
-std::optional<Symbol> ELF::getDynSymbol(uintptr_t pIndex) { return getSymbol(_fetchSection(".dynsym"), pIndex); }
+std::optional<Symbol> ELF::getDynSymbol(size_t pIndex) { return getSymbol(_fetchSection(".dynsym"), pIndex); }
 
 bool ELF::moveToSection(const std::string& pName) {
     auto section = _fetchSection(pName);
@@ -234,14 +234,14 @@ void ELF::_buildSymbolCache() {
 
     if (!mIsValid) return;
 
-    if (!forEachSymbols([this](uintptr_t index, const Symbol& symbol) {
+    if (!forEachSymbols([this](size_t index, const Symbol& symbol) {
             mSymbolCache.mFromName.try_emplace(symbol.mName, index);
             mSymbolCache.mFromValue.try_emplace(symbol.mValue, index);
         })) {
         spdlog::warn(".symtab not found in this image!");
     }
 
-    if (!forEachDynSymbols([this](uintptr_t index, const Symbol& symbol) {
+    if (!forEachDynSymbols([this](size_t index, const Symbol& symbol) {
             mDynSymbolCache.mFromName.try_emplace(symbol.mName, index);
             mDynSymbolCache.mFromValue.try_emplace(getEndOfSections() + sizeof(intptr_t) * index, index);
         })) {

@@ -69,9 +69,9 @@ protected:
 
     inline uintptr_t last() { return cur() - mLastOperated; }
 
-    inline bool move(intptr_t pPos, RelativePos pRel = Current) {
-        mStream.seekp(pPos, (std::ios_base::seekdir)pRel);
-        mStream.seekg(pPos, (std::ios_base::seekdir)pRel);
+    inline bool move(intptr_t pVal, RelativePos pRel = Current) {
+        mStream.seekp(pVal, (std::ios_base::seekdir)pRel);
+        mStream.seekg(pVal, (std::ios_base::seekdir)pRel);
         return mStream.good();
     }
 
