@@ -3,7 +3,8 @@
 //
 
 #include "ELF.h"
-#include <LIEF/ELF/Section.hpp>
+
+#include <magic_enum.hpp>
 
 // #define DEBUG_DUMP_SECTION
 #ifdef DEBUG_DUMP_SECTION
@@ -19,6 +20,12 @@ ELF::ELF(const std::string& pPath) : Loader(pPath) {
         mIsValid = false;
         return;
     }
+    spdlog::info(
+        "{:<12}{} for {}",
+        "Format:",
+        magic_enum::enum_name(mImage->type()),
+        magic_enum::enum_name(mImage->header().machine_type())
+    );
     _buildSymbolCache();
     _relocateReadonlyData();
 }

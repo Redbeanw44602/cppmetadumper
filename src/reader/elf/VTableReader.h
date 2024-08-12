@@ -11,23 +11,28 @@
 #include <map>
 #include <unordered_set>
 
+#include <nlohmann/json.hpp>
+
 METADUMPER_ELF_BEGIN
 
 enum class TypeInheritKind { None, Single, Multiple };
 
 struct TypeInfo {
     std::string                           mName; // _ZTI...
-    [[nodiscard]] virtual TypeInheritKind kind() const = 0;
+    [[nodiscard]] virtual TypeInheritKind kind() const   = 0;
+    [[nodiscard]] virtual nlohmann::json  toJson() const = 0;
 };
 
 struct NoneInheritTypeInfo : public TypeInfo {
     using TypeInfo::TypeInfo;
     [[nodiscard]] TypeInheritKind kind() const override { return TypeInheritKind::None; };
+    [[nodiscard]] nlohmann::json  toJson() const override;
 };
 
 struct SingleInheritTypeInfo : public TypeInfo {
     using TypeInfo::TypeInfo;
     [[nodiscard]] TypeInheritKind kind() const override { return TypeInheritKind::Single; };
+    [[nodiscard]] nlohmann::json  toJson() const override;
     std::string                   mParentType; // _ZTI...
     // bool mIsWeak;
     ptrdiff_t mOffset;
@@ -43,6 +48,7 @@ struct BaseClassInfo {
 struct MultipleInheritTypeInfo : public TypeInfo {
     using TypeInfo::TypeInfo;
     [[nodiscard]] TypeInheritKind kind() const override { return TypeInheritKind::Multiple; };
+    [[nodiscard]] nlohmann::json  toJson() const override;
     unsigned int                  mAttribute;
     // bool mIsWeak;
     std::vector<BaseClassInfo> mBaseClasses;
@@ -50,30 +56,34 @@ struct MultipleInheritTypeInfo : public TypeInfo {
 
 struct VTableColumn {
     std::optional<std::string> mSymbolName;
-    uintptr_t                  mRVA{0};
+    uintptr_t                  mRVA{};
+    nlohmann::json             toJson() const;
 };
 
 struct VTable {
     std::string                                                    mName;     // _ZTV...
     std::optional<std::string>                                     mTypeName; // _ZTI...
     std::map<ptrdiff_t, std::vector<VTableColumn>, std::greater<>> mSubTables;
+    nlohmann::json                                                 toJson() const;
 };
 
 struct DumpVFTableResult {
     unsigned int        mTotal{0};
     unsigned int        mParsed{0};
     std::vector<VTable> mVFTable;
+    nlohmann::json      toJson() const;
 };
 
 struct DumpTypeInfoResult {
     unsigned int                           mTotal{0};
     unsigned int                           mParsed{0};
     std::vector<std::unique_ptr<TypeInfo>> mTypeInfo;
+    nlohmann::json                         toJson() const;
 };
 
 class VTableReader : public ELF {
 public:
-    explicit VTableReader(const std::string& pPath);
+    explicit VTableReader(const std::string& pPath) : ELF(pPath) { _prepareData(); };
 
     DumpVFTableResult     dumpVFTable();
     std::optional<VTable> readVTable();

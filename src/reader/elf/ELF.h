@@ -8,17 +8,12 @@
 #include "base/Loader.h"
 
 #include <LIEF/ELF.hpp>
-#include <LIEF/ELF/Header.hpp>
-#include <LIEF/ELF/Symbol.hpp>
 
 METADUMPER_ELF_BEGIN
 
 class ELF : public Loader {
 public:
     explicit ELF(const std::string& pPath);
-
-    LIEF::ELF::Header::CLASS getType() const { return mImage->type(); };
-    LIEF::ELF::ARCH          getMachine() const { return mImage->header().machine_type(); };
 
 protected:
     [[nodiscard]] uintptr_t getEndOfSections() const;
