@@ -11,7 +11,7 @@
 #include <fstream>
 #endif
 
-METADUMPER_ELF_BEGIN
+METADUMPER_FORMAT_BEGIN
 
 ELF::ELF(const std::string& pPath) : Loader(pPath) {
     mImage = LIEF::ELF::Parser::parse(pPath);
@@ -179,4 +179,4 @@ void ELF::_buildSymbolCache() {
     }
 }
 
-METADUMPER_ELF_END
+METADUMPER_FORMAT_END

@@ -4,11 +4,9 @@
 
 #include "base/Base.h"
 
-#include "reader/elf/VTableReader.h"
+#include "abi/itanium/ItaniumVTableReader.h"
 
 #include <argparse/argparse.hpp>
-#include <nlohmann/json.hpp>
-
 #include <fstream>
 
 using JSON = nlohmann::json;
@@ -43,7 +41,7 @@ void init_logger() {
     spdlog::set_default_logger(logger);
 }
 
-JSON read_vtable(elf::VTableReader& reader) {
+JSON read_vtable(abi::itanium::ItaniumVTableReader& reader) {
     auto vftable = reader.dumpVFTable();
     spdlog::info(
         "Parsed vftable(s): {}/{}({:.4}%)",
@@ -54,7 +52,7 @@ JSON read_vtable(elf::VTableReader& reader) {
     return vftable.toJson();
 }
 
-JSON read_typeinfo(elf::VTableReader& reader) {
+JSON read_typeinfo(abi::itanium::ItaniumVTableReader& reader) {
     auto types = reader.dumpTypeInfo();
     spdlog::info(
         "Parsed typeinfo(s): {}/{}({:.4}%)",
@@ -93,7 +91,7 @@ int main(int argc, char* argv[]) {
         outputFileBase.erase(outputFileBase.size() - 5, 5);
     }
 
-    elf::VTableReader reader(inputFileName);
+    abi::itanium::ItaniumVTableReader reader(inputFileName);
     if (!reader.isValid()) return -1;
 
     spdlog::info("{:<12}{}", "Input file:", inputFileName);

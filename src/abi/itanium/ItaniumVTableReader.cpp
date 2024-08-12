@@ -2,68 +2,13 @@
 // Created by RedbeanW on 2024/1/19.
 //
 
-#include "VTableReader.h"
+#include "ItaniumVTableReader.h"
 
 #include "util/Hash.h"
 
 using JSON = nlohmann::json;
 
-METADUMPER_ELF_BEGIN
-
-JSON VTable::toJson() const {
-    auto subTables = JSON::array();
-    for (auto& j : mSubTables) {
-        auto entities = JSON::array();
-        for (auto& k : j.second) {
-            entities.emplace_back(k.toJson());
-        }
-        subTables.emplace_back(JSON{
-            {"offset",   j.first },
-            {"entities", entities}
-        });
-    }
-    return JSON{
-        {"sub_tables", subTables                                   },
-        {"type_name",  mTypeName.has_value() ? *mTypeName : nullptr}
-    };
-}
-
-JSON VTableColumn::toJson() const {
-    return JSON{
-        {"symbol", mSymbolName.has_value() ? JSON(*mSymbolName) : JSON{}},
-        {"rva",    mRVA                                                 }
-    };
-}
-
-JSON NoneInheritTypeInfo::toJson() const {
-    return JSON{
-        {"inherit_type", "None"}
-    };
-}
-
-JSON SingleInheritTypeInfo::toJson() const {
-    return JSON{
-        {"inherit_type", "Single"   },
-        {"parent_type",  mParentType},
-        {"offset",       mOffset    }
-    };
-}
-
-JSON MultipleInheritTypeInfo::toJson() const {
-    auto baseClasses = JSON::array();
-    for (auto& base : mBaseClasses) {
-        baseClasses.emplace_back(JSON{
-            {"offset", base.mOffset},
-            {"name",   base.mName  },
-            {"mask",   base.mMask  }
-        });
-    }
-    return JSON{
-        {"inherit_type", "Multiple" },
-        {"attribute",    mAttribute },
-        {"base_classes", baseClasses}
-    };
-}
+METADUMPER_ABI_ITANIUM_BEGIN
 
 JSON DumpVFTableResult::toJson() const {
     JSON ret;
@@ -82,7 +27,7 @@ JSON DumpTypeInfoResult::toJson() const {
     return ret;
 }
 
-DumpVFTableResult VTableReader::dumpVFTable() {
+DumpVFTableResult ItaniumVTableReader::dumpVFTable() {
     DumpVFTableResult result;
 
     // Dump with symbol table:
@@ -126,14 +71,14 @@ DumpVFTableResult VTableReader::dumpVFTable() {
     return result;
 }
 
-std::string VTableReader::_readZTS() {
+std::string ItaniumVTableReader::_readZTS() {
     auto value = read<intptr_t>();
     // spdlog::debug("\tReading ZTS at {:#x}", value);
     auto str = readCString(value, 2048);
     return str.empty() ? str : "_ZTI" + str;
 }
 
-std::string VTableReader::_readZTI() {
+std::string ItaniumVTableReader::_readZTI() {
     auto backAddr = cur() + sizeof(intptr_t);
     auto value    = read<intptr_t>();
     if (!isInSection(value, ".data.rel.ro")) { // external
@@ -147,7 +92,7 @@ std::string VTableReader::_readZTI() {
     return str;
 }
 
-std::optional<VTable> VTableReader::readVTable() {
+std::optional<VTable> ItaniumVTableReader::readVTable() {
     VTable                     result;
     std::optional<std::string> symbol;
     ptrdiff_t                  offset{};
@@ -209,7 +154,7 @@ std::optional<VTable> VTableReader::readVTable() {
     return result;
 }
 
-DumpTypeInfoResult VTableReader::dumpTypeInfo() {
+DumpTypeInfoResult ItaniumVTableReader::dumpTypeInfo() {
     DumpTypeInfoResult result;
     result.mTotal = mPrepared.mTypeInfoBegins.size();
     for (auto& addr : mPrepared.mTypeInfoBegins) {
@@ -229,7 +174,7 @@ DumpTypeInfoResult VTableReader::dumpTypeInfo() {
     return result;
 }
 
-std::unique_ptr<TypeInfo> VTableReader::readTypeInfo() {
+std::unique_ptr<TypeInfo> ItaniumVTableReader::readTypeInfo() {
     // Reference:
     // https://itanium-cxx-abi.github.io/cxx-abi/abi.html#rtti-layout
 
@@ -298,7 +243,7 @@ std::unique_ptr<TypeInfo> VTableReader::readTypeInfo() {
     }
 }
 
-void VTableReader::printDebugString(const VTable& pTable) {
+void ItaniumVTableReader::printDebugString(const VTable& pTable) {
     spdlog::info("VTable: {}", pTable.mName);
     for (auto& i : pTable.mSubTables) {
         spdlog::info("\tOffset: {:#x}", i.first);
@@ -308,7 +253,7 @@ void VTableReader::printDebugString(const VTable& pTable) {
     }
 }
 
-void VTableReader::_prepareData() {
+void ItaniumVTableReader::_prepareData() {
     if (!mIsValid) return;
     for (auto& symbol : mImage->symtab_symbols()) {
         if (symbol.name().starts_with("_ZTV")) {
@@ -328,7 +273,7 @@ void VTableReader::_prepareData() {
     }
 }
 
-void VTableReader::printDebugString(const std::unique_ptr<TypeInfo>& pType) {
+void ItaniumVTableReader::printDebugString(const std::unique_ptr<TypeInfo>& pType) {
     if (!pType) return;
     spdlog::info("TypeInfo: {}", pType->mName);
     switch (pType->kind()) {
@@ -357,4 +302,4 @@ void VTableReader::printDebugString(const std::unique_ptr<TypeInfo>& pType) {
     }
 }
 
-METADUMPER_ELF_END
+METADUMPER_ABI_ITANIUM_END

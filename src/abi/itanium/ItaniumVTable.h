@@ -1,19 +1,10 @@
-//
-// Created by RedbeanW on 2024/1/19.
-//
-
 #pragma once
 
 #include "base/Base.h"
 
-#include "ELF.h"
-
-#include <map>
-#include <unordered_set>
-
 #include <nlohmann/json.hpp>
 
-METADUMPER_ELF_BEGIN
+METADUMPER_ABI_ITANIUM_BEGIN
 
 enum class TypeInheritKind { None, Single, Multiple };
 
@@ -67,43 +58,4 @@ struct VTable {
     nlohmann::json                                                 toJson() const;
 };
 
-struct DumpVFTableResult {
-    unsigned int        mTotal{0};
-    unsigned int        mParsed{0};
-    std::vector<VTable> mVFTable;
-    nlohmann::json      toJson() const;
-};
-
-struct DumpTypeInfoResult {
-    unsigned int                           mTotal{0};
-    unsigned int                           mParsed{0};
-    std::vector<std::unique_ptr<TypeInfo>> mTypeInfo;
-    nlohmann::json                         toJson() const;
-};
-
-class VTableReader : public ELF {
-public:
-    explicit VTableReader(const std::string& pPath) : ELF(pPath) { _prepareData(); };
-
-    DumpVFTableResult     dumpVFTable();
-    std::optional<VTable> readVTable();
-
-    DumpTypeInfoResult        dumpTypeInfo();
-    std::unique_ptr<TypeInfo> readTypeInfo();
-
-    static void printDebugString(const VTable& pTable);
-    static void printDebugString(const std::unique_ptr<TypeInfo>& pType);
-
-private:
-    void _prepareData();
-
-    std::string _readZTS();
-    std::string _readZTI();
-
-    struct PreparedData {
-        std::unordered_set<uintptr_t> mVTableBegins;
-        std::unordered_set<uintptr_t> mTypeInfoBegins;
-    } mPrepared;
-};
-
-METADUMPER_ELF_END
+METADUMPER_ABI_ITANIUM_END

@@ -82,7 +82,7 @@ protected:
 private:
     std::stringstream mStream;
 
-    size_t mLastOperated{0};
+    size_t mLastOperated{};
 };
 
 METADUMPER_END
