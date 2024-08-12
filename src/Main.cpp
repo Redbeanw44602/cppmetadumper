@@ -4,10 +4,14 @@
 
 #include "base/Base.h"
 
-#include "abi/itanium/ItaniumVTableReader.h"
-
 #include <argparse/argparse.hpp>
 #include <fstream>
+
+#include "format/ELF.h"
+#include "format/MachO.h"
+#include "util/MagicHelper.h"
+
+#include "abi/itanium/ItaniumVTableReader.h"
 
 using JSON = nlohmann::json;
 
@@ -64,6 +68,7 @@ JSON read_typeinfo(abi::itanium::ItaniumVTableReader& reader) {
 }
 
 void save_to_json(const std::string& fileName, const JSON& result) {
+    if (result.empty()) return;
     std::ofstream file(fileName, std::ios::trunc);
     if (file.is_open()) {
         file << result.dump(4);
@@ -79,6 +84,8 @@ int main(int argc, char* argv[]) {
 
     init_logger();
 
+    // setup I/O file name.
+
     std::string inputFileName, outputFileBase;
     try {
         std::tie(inputFileName, outputFileBase) = init_program(argc, argv);
@@ -91,16 +98,42 @@ int main(int argc, char* argv[]) {
         outputFileBase.erase(outputFileBase.size() - 5, 5);
     }
 
-    abi::itanium::ItaniumVTableReader reader(inputFileName);
-    if (!reader.isValid()) return -1;
-
     spdlog::info("{:<12}{}", "Input file:", inputFileName);
 
-    auto jsonVft = read_vtable(reader);
-    auto jsonTyp = read_typeinfo(reader);
+    // judge fileType and processing.
 
-    save_to_json(outputFileBase + ".vftable.json", jsonVft);
-    save_to_json(outputFileBase + ".typeinfo.json", jsonTyp);
+    MagicHelper magic(inputFileName);
+    if (!magic.isValid()) {
+        spdlog::error("Unable to load input file.");
+        return -1;
+    }
+
+    std::shared_ptr<Executable> image;
+
+    switch (magic.judgeFileType()) {
+    case Magic::ELF:
+        image = std::make_shared<format::ELF>(inputFileName);
+        break;
+    case Magic::MACHO_64:
+        image = std::make_shared<format::MachO>(inputFileName);
+        break;
+    case Magic::PE:
+    case Magic::MACHO_32:
+    case Magic::UNKNOWN:
+    default:
+        spdlog::error("Unsupported file type.");
+        return -1;
+    }
+
+    if (!image->isValid()) return -1;
+
+    abi::itanium::ItaniumVTableReader reader(image);
+
+    auto jsonVftable = read_vtable(reader);
+    auto jsonTypes   = read_typeinfo(reader);
+
+    save_to_json(outputFileBase + ".vftable.json", jsonVftable);
+    save_to_json(outputFileBase + ".typeinfo.json", jsonTypes);
 
     spdlog::info("All works done...");
 

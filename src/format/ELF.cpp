@@ -13,7 +13,7 @@
 
 METADUMPER_FORMAT_BEGIN
 
-ELF::ELF(const std::string& pPath) : Loader(pPath) {
+ELF::ELF(const std::string& pPath) : Executable(pPath) {
     mImage = LIEF::ELF::Parser::parse(pPath);
     if (!mImage) {
         spdlog::error("Failed to load elf image.");

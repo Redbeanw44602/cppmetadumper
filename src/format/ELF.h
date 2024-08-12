@@ -5,30 +5,27 @@
 #pragma once
 
 #include "base/Base.h"
-#include "base/Loader.h"
+#include "base/Executable.h"
 
 #include <LIEF/ELF.hpp>
 
 METADUMPER_FORMAT_BEGIN
 
-class ELF : public Loader {
+class ELF : public Executable {
 public:
     explicit ELF(const std::string& pPath);
 
-protected:
-    [[nodiscard]] uintptr_t getEndOfSections() const;
-    [[nodiscard]] size_t    getGapInFront(uintptr_t pAddr) const;
-    [[nodiscard]] bool      isInSection(uintptr_t pAddr, const std::string& pSecName) const;
+    [[nodiscard]] uintptr_t getEndOfSections() const override;
+    [[nodiscard]] size_t    getGapInFront(uintptr_t pAddr) const override;
+    [[nodiscard]] bool      isInSection(uintptr_t pAddr, const std::string& pSecName) const override;
 
     // lief's get_symbol is very slow!
-    LIEF::ELF::Symbol* lookupSymbol(uintptr_t pAddr);
-    LIEF::ELF::Symbol* lookupSymbol(const std::string& pName);
+    LIEF::ELF::Symbol* lookupSymbol(uintptr_t pAddr) override;
+    LIEF::ELF::Symbol* lookupSymbol(const std::string& pName) override;
 
-    bool moveToSection(const std::string& pName);
+    bool moveToSection(const std::string& pName) override;
 
-    ptrdiff_t getReadOffset(uintptr_t pAddr) override { return -(ptrdiff_t)getGapInFront(pAddr); }
-
-    std::unique_ptr<LIEF::ELF::Binary> mImage;
+    LIEF::ELF::Binary* getImage() override { return mImage.get(); }
 
 private:
     void _relocateReadonlyData();
@@ -38,6 +35,8 @@ private:
         std::unordered_map<uintptr_t, LIEF::ELF::Symbol*>   mFromValue;
         std::unordered_map<std::string, LIEF::ELF::Symbol*> mFromName;
     };
+
+    std::unique_ptr<LIEF::ELF::Binary> mImage;
 
     SymbolCache mSymbolCache;
     SymbolCache mDynSymbolCache;

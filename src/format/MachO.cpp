@@ -4,9 +4,61 @@
 
 #include "MachO.h"
 
+#include <LIEF/MachO/enums.hpp>
+
+// magic_enum is out-of-range.
+
+using MACHO_TYPES = LIEF::MachO::MACHO_TYPES;
+using CPU_TYPE    = LIEF::MachO::Header::CPU_TYPE;
+
+std::string macho_type_to_str(MACHO_TYPES type) {
+    switch (type) {
+    case MACHO_TYPES::MH_MAGIC:
+    case MACHO_TYPES::MH_CIGAM:
+    case MACHO_TYPES::MH_MAGIC_64:
+    case MACHO_TYPES::MH_CIGAM_64:
+        return "Mach-O";
+    case MACHO_TYPES::FAT_MAGIC:
+    case MACHO_TYPES::FAT_CIGAM:
+        return "Mach-O Universal Binary";
+    case MACHO_TYPES::NEURAL_MODEL:
+        return "Mach-O Neural Network Model";
+    case MACHO_TYPES::UNKNOWN:
+    default:
+        return "Unknown";
+    }
+}
+
+std::string macho_cpu_to_str(CPU_TYPE cpu) {
+    switch (cpu) {
+    case CPU_TYPE::ANY:
+        return "Any";
+    case CPU_TYPE::X86:
+        return "x86";
+    case CPU_TYPE::X86_64:
+        return "x86_64";
+    case CPU_TYPE::MIPS:
+        return "MIPS";
+    case CPU_TYPE::MC98000:
+        return "MC98000";
+    case CPU_TYPE::ARM:
+        return "ARM";
+    case CPU_TYPE::ARM64:
+        return "ARM64";
+    case CPU_TYPE::SPARC:
+        return "SPARC";
+    case CPU_TYPE::POWERPC:
+        return "PowerPC";
+    case CPU_TYPE::POWERPC64:
+        return "PowerPC64";
+    default:
+        return "Unknown";
+    }
+}
+
 METADUMPER_FORMAT_BEGIN
 
-MachO::MachO(const std::string& pPath) : Loader(pPath) {
+MachO::MachO(const std::string& pPath) : Executable(pPath) {
     auto fatBinary = LIEF::MachO::Parser::parse(pPath);
     if (!fatBinary) {
         spdlog::error("Failed to load mach-o image.");
@@ -18,7 +70,14 @@ MachO::MachO(const std::string& pPath) : Loader(pPath) {
         mIsValid = false;
         return;
     }
-    mImage = fatBinary->take(0);
+    mImage     = fatBinary->take(0);
+    auto magic = mImage->header().magic();
+    if (magic != MACHO_TYPES::MH_MAGIC_64) {
+        spdlog::error("{} are not supported yet.", macho_type_to_str(magic));
+        return;
+    }
+    spdlog::info("{:<12}{} for {}", "Format:", macho_type_to_str(magic), macho_cpu_to_str(mImage->header().cpu_type()));
+
     _buildSymbolCache();
     _relocateReadonlyData();
 }

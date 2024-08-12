@@ -4,27 +4,41 @@
 
 #include "ItaniumVTableReader.h"
 
+#include "format/ELF.h"
+#include "format/MachO.h"
+
 #include "util/Hash.h"
 
 using JSON = nlohmann::json;
 
 METADUMPER_ABI_ITANIUM_BEGIN
 
-JSON DumpVFTableResult::toJson() const {
-    JSON ret;
-    for (auto& i : mVFTable) {
-        ret[i.mName] = i.toJson();
-    }
-    return ret;
+ItaniumVTableReader::ItaniumVTableReader(const std::shared_ptr<Executable>& image) : mImage(image) {
+    _prepareData();
+    _initFormatConstants();
 }
 
-JSON DumpTypeInfoResult::toJson() const {
-    JSON ret;
-    for (auto& type : mTypeInfo) {
-        if (!type) continue;
-        ret[type->mName] = type->toJson();
+void ItaniumVTableReader::_initFormatConstants() {
+    if (dynamic_cast<format::ELF*>(mImage.get())) {
+        _constant._segment_data       = ".data.rel.ro";
+        _constant._segment_text       = ".text";
+        _constant._prefix_vtable      = "_ZTV";
+        _constant._prefix_typeinfo    = "_ZTI";
+        _constant._sym_class_info     = "_ZTVN10__cxxabiv117__class_type_infoE";
+        _constant._sym_si_class_info  = "_ZTVN10__cxxabiv120__si_class_type_infoE";
+        _constant._sym_vmi_class_info = "_ZTVN10__cxxabiv121__vmi_class_type_infoE";
+        return;
     }
-    return ret;
+    if (dynamic_cast<format::MachO*>(mImage.get())) {
+        _constant._segment_data       = "__text";
+        _constant._segment_text       = "__const";
+        _constant._prefix_vtable      = "_ZTV";
+        _constant._prefix_typeinfo    = "_ZTI";
+        _constant._sym_class_info     = "__ZTVN10__cxxabiv117__class_type_infoE";
+        _constant._sym_si_class_info  = "__ZTVN10__cxxabiv120__si_class_type_infoE";
+        _constant._sym_vmi_class_info = "__ZTVN10__cxxabiv121__vmi_class_type_infoE";
+        return;
+    }
 }
 
 DumpVFTableResult ItaniumVTableReader::dumpVFTable() {
@@ -33,7 +47,7 @@ DumpVFTableResult ItaniumVTableReader::dumpVFTable() {
     // Dump with symbol table:
     if (!mPrepared.mVTableBegins.empty()) {
         for (auto& addr : mPrepared.mVTableBegins) {
-            move(addr, Begin);
+            mImage->move(addr, Begin);
             auto vt = readVTable();
             result.mTotal++;
             if (vt) {
@@ -45,26 +59,26 @@ DumpVFTableResult ItaniumVTableReader::dumpVFTable() {
     }
 
     // Dump without symbol table:
-    if (!moveToSection(".data.rel.ro")) {
-        spdlog::error("Unable to move to target section.");
+    if (!mImage->moveToSection(_constant._segment_data)) {
+        spdlog::error("Unable to find data section.");
         return result;
     }
 
-    while (isInSection(cur(), ".data.rel.ro")) {
-        auto backAddr = cur();
-        auto expect1  = read<intptr_t>();
-        auto expect2  = read<intptr_t>();
-        auto expect3  = read<intptr_t>();
-        move(backAddr, Begin);
+    while (mImage->isInSection(mImage->cur(), _constant._segment_data)) {
+        auto backAddr = mImage->cur();
+        auto expect1  = mImage->read<intptr_t>();
+        auto expect2  = mImage->read<intptr_t>();
+        auto expect3  = mImage->read<intptr_t>();
+        mImage->move(backAddr, Begin);
         if (expect1 == 0 && (expect2 == 0 || mPrepared.mTypeInfoBegins.contains(expect2))
-            && isInSection(expect3, ".text")) {
+            && mImage->isInSection(expect3, _constant._segment_text)) {
             auto vt = readVTable();
             if (vt) {
                 result.mVFTable.emplace_back(*vt);
                 result.mParsed++;
             }
         } else {
-            move(sizeof(intptr_t));
+            mImage->move(sizeof(intptr_t));
         }
     }
 
@@ -72,23 +86,23 @@ DumpVFTableResult ItaniumVTableReader::dumpVFTable() {
 }
 
 std::string ItaniumVTableReader::_readZTS() {
-    auto value = read<intptr_t>();
+    auto value = mImage->read<intptr_t>();
     // spdlog::debug("\tReading ZTS at {:#x}", value);
-    auto str = readCString(value, 2048);
-    return str.empty() ? str : "_ZTI" + str;
+    auto str = mImage->readCString(value, 2048);
+    return str.empty() ? str : _constant._prefix_typeinfo + str;
 }
 
 std::string ItaniumVTableReader::_readZTI() {
-    auto backAddr = cur() + sizeof(intptr_t);
-    auto value    = read<intptr_t>();
-    if (!isInSection(value, ".data.rel.ro")) { // external
-        if (auto sym = lookupSymbol(value)) return sym->name();
+    auto backAddr = mImage->cur() + sizeof(intptr_t);
+    auto value    = mImage->read<intptr_t>();
+    if (!mImage->isInSection(value, _constant._segment_data)) { // external
+        if (auto sym = mImage->lookupSymbol(value)) return sym->name();
         else return {};
     }
-    move(value, Begin);
-    move(sizeof(intptr_t)); // ignore ZTI
+    mImage->move(value, Begin);
+    mImage->move(sizeof(intptr_t)); // ignore ZTI
     auto str = _readZTS();
-    move(backAddr, Begin);
+    mImage->move(backAddr, Begin);
     return str;
 }
 
@@ -97,24 +111,24 @@ std::optional<VTable> ItaniumVTableReader::readVTable() {
     std::optional<std::string> symbol;
     ptrdiff_t                  offset{};
     std::string                type;
-    if (auto symbol_ = lookupSymbol(cur())) {
+    if (auto symbol_ = mImage->lookupSymbol(mImage->cur())) {
         symbol = symbol_->name();
-        if (!symbol->starts_with("_ZTV")) {
-            spdlog::error("Failed to reading vtable at {:#x}. [CURRENT_IS_NOT_VTABLE]", cur());
+        if (!symbol->starts_with(_constant._prefix_vtable)) {
+            spdlog::error("Failed to reading vtable at {:#x}. [CURRENT_IS_NOT_VTABLE]", mImage->cur());
             return std::nullopt;
         }
     }
     while (true) {
-        auto value = read<intptr_t>();
+        auto value = mImage->read<intptr_t>();
         // pre-check
-        if (!isInSection(value, ".text")) {
+        if (!mImage->isInSection(value, _constant._segment_text)) {
             // read: Header
             if (value > 0) break;            // stopped.
             if (result.mSubTables.empty()) { // value == 0, is main table.
                 if (value != 0) {
                     spdlog::error(
                         "Failed to reading vtable at {:#x} in {}. [ABNORMAL_THIS_OFFSET]",
-                        last(),
+                        mImage->last(),
                         symbol.has_value() ? *symbol : "<unknown>"
                     );
                     return std::nullopt;
@@ -122,7 +136,7 @@ std::optional<VTable> ItaniumVTableReader::readVTable() {
                 // read: TypeInfo
                 type = _readZTI();
                 if (!type.empty()) {
-                    if (!symbol) symbol = "_ZTV" + type.substr(4); // "_ZTI".length == 4
+                    if (!symbol) symbol = _constant._prefix_vtable + type.substr(4); // "_ZTI".length == 4
                     result.mTypeName = type;
                 }
             } else {                   // value < 0, multi-inherited, is sub table,
@@ -132,7 +146,7 @@ std::optional<VTable> ItaniumVTableReader::readVTable() {
                 if (_readZTI() != type) {
                     spdlog::error(
                         "Failed to reading vtable at {:#x} in {}. [TYPEINFO_MISMATCH]",
-                        last(),
+                        mImage->last(),
                         symbol.has_value() ? "<unknown>" : *symbol
                     );
                     return std::nullopt;
@@ -141,13 +155,13 @@ std::optional<VTable> ItaniumVTableReader::readVTable() {
             continue;
         }
         // read: Entities
-        auto curSym = lookupSymbol(value);
+        auto curSym = mImage->lookupSymbol(value);
         result.mSubTables[offset].emplace_back(
             VTableColumn{curSym ? std::make_optional(curSym->name()) : std::nullopt, (uintptr_t)value}
         );
     }
     if (!symbol) {
-        spdlog::warn("Failed to reading vtable at {:#x} in <unknown>. [NAME_NOT_FOUND]", last());
+        spdlog::warn("Failed to reading vtable at {:#x} in <unknown>. [NAME_NOT_FOUND]", mImage->last());
         return std::nullopt;
     }
     result.mName = *symbol;
@@ -158,7 +172,7 @@ DumpTypeInfoResult ItaniumVTableReader::dumpTypeInfo() {
     DumpTypeInfoResult result;
     result.mTotal = mPrepared.mTypeInfoBegins.size();
     for (auto& addr : mPrepared.mTypeInfoBegins) {
-        move(addr, Begin);
+        mImage->move(addr, Begin);
         std::unique_ptr<TypeInfo> type;
         try {
             type = readTypeInfo();
@@ -178,69 +192,67 @@ std::unique_ptr<TypeInfo> ItaniumVTableReader::readTypeInfo() {
     // Reference:
     // https://itanium-cxx-abi.github.io/cxx-abi/abi.html#rtti-layout
 
-    auto beginAddr = cur();
+    auto beginAddr = mImage->cur();
 
     if (beginAddr == 0xffffffffffffffff) {
         // Bad image.
         throw std::runtime_error("For some unknown reason, the reading process stopped.");
     }
 
-    auto inheritIndicatorValue = read<intptr_t>() - 0x10; // see std::type_info
+    auto inheritIndicatorValue = mImage->read<intptr_t>() - 0x10; // see std::type_info
 
-    auto inheritIndicator = lookupSymbol(inheritIndicatorValue);
+    auto inheritIndicator = mImage->lookupSymbol(inheritIndicatorValue);
     if (!inheritIndicator) {
         spdlog::error("Failed to reading type info at {:#x}. [CURRENT_IS_NOT_TYPEINFO]", beginAddr);
         return nullptr;
     }
+    auto name = inheritIndicator->name();
     // spdlog::debug("Processing: {:#x}", beginAddr);
-    switch (H(inheritIndicator->name().c_str())) {
-    case H("_ZTVN10__cxxabiv117__class_type_infoE"): {
+    if (name == _constant._sym_class_info) {
         auto result   = std::make_unique<NoneInheritTypeInfo>();
         result->mName = _readZTS();
         if (result->mName.empty()) {
-            spdlog::error("Failed to reading type info at {:#x}. [ABNORMAL_SYMBOL_VALUE]", last());
+            spdlog::error("Failed to reading type info at {:#x}. [ABNORMAL_SYMBOL_VALUE]", mImage->last());
             return nullptr;
         }
         return result;
     }
-    case H("_ZTVN10__cxxabiv120__si_class_type_infoE"): {
+    if (name == _constant._sym_si_class_info) {
         auto result         = std::make_unique<SingleInheritTypeInfo>();
         result->mName       = _readZTS();
         result->mOffset     = 0x0;
         result->mParentType = _readZTI();
         if (result->mName.empty() || result->mParentType.empty()) {
-            spdlog::error("Failed to reading type info at {:#x}. [ABNORMAL_SYMBOL_VALUE]", last());
+            spdlog::error("Failed to reading type info at {:#x}. [ABNORMAL_SYMBOL_VALUE]", mImage->last());
             return nullptr;
         }
         return result;
     }
-    case H("_ZTVN10__cxxabiv121__vmi_class_type_infoE"): {
+    if (name == _constant._sym_vmi_class_info) {
         auto result   = std::make_unique<MultipleInheritTypeInfo>();
         result->mName = _readZTS();
         if (result->mName.empty()) {
-            spdlog::error("Failed to reading type info at {:#x}. [ABNORMAL_SYMBOL_VALUE]", last());
+            spdlog::error("Failed to reading type info at {:#x}. [ABNORMAL_SYMBOL_VALUE]", mImage->last());
             return nullptr;
         }
-        result->mAttribute = read<unsigned int>();
-        auto baseCount     = read<unsigned int>();
+        result->mAttribute = mImage->read<unsigned int>();
+        auto baseCount     = mImage->read<unsigned int>();
         for (unsigned int idx = 0; idx < baseCount; idx++) {
             BaseClassInfo baseInfo;
             baseInfo.mName = _readZTI();
             if (baseInfo.mName.empty()) {
-                spdlog::error("Failed to reading type info at {:#x}. [ABNORMAL_SYMBOL_VALUE]", last());
+                spdlog::error("Failed to reading type info at {:#x}. [ABNORMAL_SYMBOL_VALUE]", mImage->last());
                 return nullptr;
             }
-            auto flag        = read<long long>();
+            auto flag        = mImage->read<long long>();
             baseInfo.mOffset = (flag >> 8) & 0xFF;
             baseInfo.mMask   = flag & 0xFF;
             result->mBaseClasses.emplace_back(baseInfo);
         }
         return result;
     }
-    default:
-        // spdlog::error("Failed to reading type info at {:#x}. [UNKNOWN_INHERIT_TYPE]", beginAddr);
-        return nullptr;
-    }
+    // spdlog::error("Failed to reading type info at {:#x}. [UNKNOWN_INHERIT_TYPE]", beginAddr);
+    return nullptr;
 }
 
 void ItaniumVTableReader::printDebugString(const VTable& pTable) {
@@ -254,22 +266,29 @@ void ItaniumVTableReader::printDebugString(const VTable& pTable) {
 }
 
 void ItaniumVTableReader::_prepareData() {
-    if (!mIsValid) return;
-    for (auto& symbol : mImage->symtab_symbols()) {
-        if (symbol.name().starts_with("_ZTV")) {
-            mPrepared.mVTableBegins.emplace(symbol.value());
-        } else if (symbol.name().starts_with("_ZTI")) {
-            mPrepared.mTypeInfoBegins.emplace(symbol.value());
+    if (!mImage->isValid()) return;
+    if (dynamic_cast<format::ELF*>(mImage.get())) {
+        auto elfImage = (LIEF::ELF::Binary*)mImage->getImage();
+        for (auto& symbol : elfImage->symtab_symbols()) {
+            if (symbol.name().starts_with(_constant._prefix_vtable)) {
+                mPrepared.mVTableBegins.emplace(symbol.value());
+            } else if (symbol.name().starts_with(_constant._prefix_typeinfo)) {
+                mPrepared.mTypeInfoBegins.emplace(symbol.value());
+            }
         }
+        for (auto& relocation : elfImage->dynamic_relocations()) {
+            if (!relocation.has_symbol()) return;
+            auto name = relocation.symbol()->name();
+            if (name == _constant._sym_class_info || name == _constant._sym_si_class_info
+                || name == _constant._sym_vmi_class_info) {
+                mPrepared.mTypeInfoBegins.emplace(relocation.address());
+            }
+        }
+        return;
     }
-    for (auto& relocation : mImage->dynamic_relocations()) {
-        if (!relocation.has_symbol()) return;
-        switch (H(relocation.symbol()->name().c_str())) {
-        case H("_ZTVN10__cxxabiv117__class_type_infoE"):
-        case H("_ZTVN10__cxxabiv120__si_class_type_infoE"):
-        case H("_ZTVN10__cxxabiv121__vmi_class_type_infoE"):
-            mPrepared.mTypeInfoBegins.emplace(relocation.address());
-        }
+    if (dynamic_cast<format::MachO*>(mImage.get())) {
+        auto machoImage = (LIEF::MachO::Binary*)mImage->getImage();
+        return;
     }
 }
 
@@ -300,6 +319,23 @@ void ItaniumVTableReader::printDebugString(const std::unique_ptr<TypeInfo>& pTyp
         break;
     }
     }
+}
+
+JSON DumpVFTableResult::toJson() const {
+    JSON ret;
+    for (auto& i : mVFTable) {
+        ret[i.mName] = i.toJson();
+    }
+    return ret;
+}
+
+JSON DumpTypeInfoResult::toJson() const {
+    JSON ret;
+    for (auto& type : mTypeInfo) {
+        if (!type) continue;
+        ret[type->mName] = type->toJson();
+    }
+    return ret;
 }
 
 METADUMPER_ABI_ITANIUM_END

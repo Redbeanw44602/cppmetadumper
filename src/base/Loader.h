@@ -8,14 +8,14 @@
 
 METADUMPER_BEGIN
 
+enum RelativePos { Begin, Current, End };
+
 class Loader {
 public:
     explicit Loader(const std::string& pPath);
+    virtual ~Loader() = default;
 
     [[nodiscard]] bool isValid() const;
-
-protected:
-    enum RelativePos { Begin, Current, End };
 
     virtual ptrdiff_t getReadOffset(uintptr_t pAddr) { return 0; };
 
@@ -77,6 +77,7 @@ protected:
 
     inline void reset() { mStream.clear(); }
 
+protected:
     bool mIsValid{true};
 
 private:
