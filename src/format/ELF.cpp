@@ -51,8 +51,7 @@ size_t ELF::getGapInFront(uintptr_t pAddr) const {
             return ret;
         }
     }
-    spdlog::error("An exception occurred during gap calculation!");
-    return -1;
+    throw std::runtime_error("An exception occurred during gap calculation!");
 }
 
 bool ELF::isInSection(uintptr_t pAddr, const std::string& pSecName) const {
