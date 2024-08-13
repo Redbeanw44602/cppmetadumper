@@ -122,7 +122,7 @@ LIEF::MachO::Symbol* MachO::lookupSymbol(const std::string& pName) {
 
 bool MachO::moveToSection(const std::string& pName) {
     auto section = mImage->get_section(pName);
-    return section && move(section->virtual_address(), Begin);
+    return section && move(section->offset(), Begin);
 }
 
 void MachO::_relocateReadonlyData() {

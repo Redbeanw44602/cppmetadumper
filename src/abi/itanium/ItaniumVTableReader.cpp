@@ -6,16 +6,15 @@
 
 #include "format/ELF.h"
 #include "format/MachO.h"
-
-#include "util/Hash.h"
+#include <LIEF/MachO/DyldBindingInfo.hpp>
 
 using JSON = nlohmann::json;
 
 METADUMPER_ABI_ITANIUM_BEGIN
 
 ItaniumVTableReader::ItaniumVTableReader(const std::shared_ptr<Executable>& image) : mImage(image) {
-    _prepareData();
     _initFormatConstants();
+    _prepareData();
 }
 
 void ItaniumVTableReader::_initFormatConstants() {
@@ -30,8 +29,8 @@ void ItaniumVTableReader::_initFormatConstants() {
         return;
     }
     if (dynamic_cast<format::MachO*>(mImage.get())) {
-        _constant._segment_data       = "__text";
-        _constant._segment_text       = "__const";
+        _constant._segment_data       = "__const";
+        _constant._segment_text       = "__text";
         _constant._prefix_vtable      = "_ZTV";
         _constant._prefix_typeinfo    = "_ZTI";
         _constant._sym_class_info     = "__ZTVN10__cxxabiv117__class_type_infoE";
@@ -288,6 +287,13 @@ void ItaniumVTableReader::_prepareData() {
     }
     if (dynamic_cast<format::MachO*>(mImage.get())) {
         auto machoImage = (LIEF::MachO::Binary*)mImage->getImage();
+        for (auto& symbol : machoImage->symbols()) {
+            if (symbol.name().starts_with(_constant._prefix_vtable)) {
+                mPrepared.mVTableBegins.emplace(symbol.value());
+            } else if (symbol.name().starts_with(_constant._prefix_typeinfo)) {
+                mPrepared.mTypeInfoBegins.emplace(symbol.value());
+            }
+        }
         return;
     }
 }
