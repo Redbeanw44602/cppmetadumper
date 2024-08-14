@@ -6,7 +6,6 @@
 
 #include "format/ELF.h"
 #include "format/MachO.h"
-#include <LIEF/MachO/DyldBindingInfo.hpp>
 
 using JSON = nlohmann::json;
 
@@ -287,6 +286,16 @@ void ItaniumVTableReader::_prepareData() {
     }
     if (dynamic_cast<format::MachO*>(mImage.get())) {
         auto machoImage = (LIEF::MachO::Binary*)mImage->getImage();
+        if (auto dyldInfo = machoImage->dyld_info()) {
+            for (auto& bind : dyldInfo->bindings()) {
+                if (!bind.has_symbol()) continue;
+                auto name = bind.symbol()->name();
+                if (name == _constant._sym_class_info || name == _constant._sym_si_class_info
+                    || name == _constant._sym_vmi_class_info) {
+                    mPrepared.mTypeInfoBegins.emplace(bind.address());
+                }
+            }
+        }
         for (auto& symbol : machoImage->symbols()) {
             if (symbol.name().starts_with(_constant._prefix_vtable)) {
                 mPrepared.mVTableBegins.emplace(symbol.value());

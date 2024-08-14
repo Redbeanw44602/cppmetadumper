@@ -17,68 +17,85 @@ public:
 
     [[nodiscard]] bool isValid() const;
 
-    virtual ptrdiff_t getReadOffset(uintptr_t pAddr) { return 0; };
+    // Read
 
     template <typename T>
     [[nodiscard]] T read() {
         T    value;
-        auto off = getReadOffset(cur());
-        move(off);
+        auto offset = getGapInFront(cur()); // Adjust file offset to fit in-memory position.
+        move(-offset);
         mStream.read((char*)&value, sizeof(T));
-        move(-off);
+        move(offset);
         mLastOperated = sizeof(T);
         return value;
     };
 
     template <typename T, bool KeepOriPos>
-    [[nodiscard]] T read(uintptr_t pBegin) {
+    [[nodiscard]] T read(uintptr_t pVAddr) {
+        pVAddr -= getImageBase(); // Adjust the in-memory position to file-offset.
         if constexpr (KeepOriPos) {
             auto after = cur();
-            reset();
-            auto ret = read<T, false>(pBegin);
+            auto ret   = read<T, false>(pVAddr);
             move(after, Begin);
             return ret;
         }
-        move(pBegin, Begin);
+        move(pVAddr, Begin);
         return read<T>();
     }
 
-    template <typename T>
-    void write(T pData) {
+    // Write
+
+    // Temporarily disabled because the unaddressed write behavior is unclear.
+
+    // template <typename T>
+    // void write(T pData) {
+    //     mStream.write(reinterpret_cast<char*>(&pData), sizeof(T));
+    //     mLastOperated = sizeof(T);
+    // }
+
+    template <typename T, bool KeepOriginalPosition>
+    void write(uintptr_t pVAddr, T pData) {
+        if constexpr (KeepOriginalPosition) {
+            auto after = cur();
+            write<T, false>(pVAddr, pData);
+            move(after, Begin);
+            return;
+        }
+        move(pVAddr, Begin);
+        // inlined from unaddressed write.
         mStream.write(reinterpret_cast<char*>(&pData), sizeof(T));
         mLastOperated = sizeof(T);
     }
 
-    template <typename T, bool KeepOriPos>
-    void write(uintptr_t pBegin, T pData) {
-        if constexpr (KeepOriPos) {
-            auto after = cur();
-            reset();
-            write<T, false>(pBegin, pData);
-            move(after, Begin);
-            return;
-        }
-        move(pBegin, Begin);
-        write<T>(pData);
-    }
+    // Position
 
-    std::string readCString(size_t pMaxLength);
-    std::string readCString(uintptr_t pAddr, size_t pMaxLength);
-
-    inline uintptr_t cur() { return mStream.tellg(); }
+    inline uintptr_t cur() { return mStream.tellg() + getImageBase(); }
 
     inline uintptr_t last() { return cur() - mLastOperated; }
 
+    // Temporarily disabled because the unsafe move is checked above.
+
+    // inline void reset() { mStream.clear(); }
+
     inline bool move(intptr_t pVal, RelativePos pRel = Current) {
+        if (pVal && pRel == Begin) pVal -= getImageBase();
         mStream.seekp(pVal, (std::ios_base::seekdir)pRel);
         mStream.seekg(pVal, (std::ios_base::seekdir)pRel);
-        return mStream.good();
+        if (!mStream.good()) throw std::runtime_error("BinaryStream is broken.");
+        return true;
     }
 
-    inline void reset() { mStream.clear(); }
+    // Utils
+
+    std::string readCString(size_t pMaxLength);
+    std::string readCString(uintptr_t pVAddr, size_t pMaxLength);
 
 protected:
     bool mIsValid{true};
+
+    virtual size_t getGapInFront(uintptr_t pVAddr) const { return 0; };
+
+    virtual intptr_t getImageBase() const { return 0; };
 
 private:
     std::stringstream mStream;

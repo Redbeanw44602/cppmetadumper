@@ -35,12 +35,11 @@ std::string Loader::readCString(size_t pMaxLength) {
     return result;
 }
 
-std::string Loader::readCString(uintptr_t pAddr, size_t pMaxLength) {
-    auto after = cur();
-    reset();
-    move(pAddr, Begin);
+std::string Loader::readCString(uintptr_t pVAddr, size_t pMaxLength) {
+    auto beforeAddr = cur();
+    move(pVAddr, Begin);
     auto result = readCString(pMaxLength);
-    move(after, Begin);
+    move(beforeAddr, Begin);
     return result;
 }
 

@@ -129,11 +129,15 @@ int main(int argc, char* argv[]) {
 
     abi::itanium::ItaniumVTableReader reader(image);
 
-    auto jsonVftable = read_vtable(reader);
-    auto jsonTypes   = read_typeinfo(reader);
-
-    save_to_json(outputFileBase + ".vftable.json", jsonVftable);
-    save_to_json(outputFileBase + ".typeinfo.json", jsonTypes);
+    try {
+        auto jsonVftable = read_vtable(reader);
+        auto jsonTypes   = read_typeinfo(reader);
+        save_to_json(outputFileBase + ".vftable.json", jsonVftable);
+        save_to_json(outputFileBase + ".typeinfo.json", jsonTypes);
+    } catch (const std::runtime_error& e) {
+        spdlog::error(e.what());
+        return -1;
+    }
 
     spdlog::info("All works done...");
 

@@ -93,25 +93,25 @@ uintptr_t MachO::getEndOfSections() const {
     return ret;
 }
 
-size_t MachO::getGapInFront(uintptr_t pAddr) const {
+size_t MachO::getGapInFront(uintptr_t pVAddr) const {
     size_t ret;
     for (auto& segment : mImage->segments()) {
         auto begin = segment.virtual_address();
         ret        = begin - segment.file_offset();
-        if (pAddr >= begin && pAddr < begin + segment.virtual_size()) {
-            return ret;
+        if (pVAddr >= begin && pVAddr < begin + segment.virtual_size()) {
+            return ret - getImageBase();
         }
     }
     throw std::runtime_error("An exception occurred during gap calculation!");
 }
 
-bool MachO::isInSection(uintptr_t pAddr, const std::string& pSecName) const {
+bool MachO::isInSection(uintptr_t pVAddr, const std::string& pSecName) const {
     auto section = mImage->get_section(pSecName);
-    return section && section->virtual_address() <= pAddr && (section->virtual_address() + section->size()) > pAddr;
+    return section && section->virtual_address() <= pVAddr && (section->virtual_address() + section->size()) > pVAddr;
 }
 
-LIEF::MachO::Symbol* MachO::lookupSymbol(uintptr_t pAddr) {
-    if (mSymbolCache.mFromValue.contains(pAddr)) return mSymbolCache.mFromValue.at(pAddr);
+LIEF::MachO::Symbol* MachO::lookupSymbol(uintptr_t pVAddr) {
+    if (mSymbolCache.mFromValue.contains(pVAddr)) return mSymbolCache.mFromValue.at(pVAddr);
     return nullptr;
 }
 
@@ -122,7 +122,7 @@ LIEF::MachO::Symbol* MachO::lookupSymbol(const std::string& pName) {
 
 bool MachO::moveToSection(const std::string& pName) {
     auto section = mImage->get_section(pName);
-    return section && move(section->offset(), Begin);
+    return section && move(section->virtual_address(), Begin);
 }
 
 void MachO::_relocateReadonlyData() {
