@@ -192,12 +192,7 @@ std::unique_ptr<TypeInfo> ItaniumVTableReader::readTypeInfo() {
 
     auto beginAddr = mImage->cur();
 
-    if (beginAddr == 0xffffffffffffffff) {
-        // Bad image.
-        throw std::runtime_error("For some unknown reason, the reading process stopped.");
-    }
-
-    auto inheritIndicatorValue = mImage->read<intptr_t>() - 0x10; // see std::type_info
+    auto inheritIndicatorValue = mImage->read<intptr_t>() - sizeof(std::type_info);
 
     auto inheritIndicator = mImage->lookupSymbol(inheritIndicatorValue);
     if (!inheritIndicator) {
