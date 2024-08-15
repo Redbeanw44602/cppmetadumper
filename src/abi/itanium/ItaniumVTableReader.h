@@ -49,18 +49,22 @@ private:
     void _initFormatConstants();
 
     struct FormatConstants {
-        std::string _segment_text;
-        std::string _segment_data;
-        std::string _prefix_vtable;
-        std::string _prefix_typeinfo;
-        std::string _sym_class_info;
-        std::string _sym_si_class_info;
-        std::string _sym_vmi_class_info;
+        std::string SEGMENT_TEXT;
+        std::string SEGMENT_DATA;
+        std::string PREFIX_VTABLE;
+        std::string PREFIX_TYPEINFO;
+        std::string SYM_CLASS_INFO;
+        std::string SYM_SI_CLASS_INFO;
+        std::string SYM_VMI_CLASS_INFO;
+        std::string SYM_PURE_VFN;
     } _constant;
 
     struct PreparedData {
         std::unordered_set<uintptr_t> mVTableBegins;
         std::unordered_set<uintptr_t> mTypeInfoBegins;
+        // Fake symbol mapping.
+        // TODO: save memory...
+        std::unordered_map<uintptr_t, std::string> mExternalSymbolPosition;
     } mPrepared;
 
     std::shared_ptr<Executable> mImage;

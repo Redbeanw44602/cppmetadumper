@@ -3,13 +3,6 @@
 //
 
 #include "MachO.h"
-#include <LIEF/MachO/Relocation.hpp>
-#include <LIEF/MachO/RelocationDyld.hpp>
-
-// #define DEBUG_DUMP_SECTION
-#ifdef DEBUG_DUMP_SECTION
-#include <fstream>
-#endif
 
 // magic_enum is out-of-range.
 
@@ -82,9 +75,7 @@ MachO::MachO(const std::string& pPath) : Executable(pPath) {
         return;
     }
     spdlog::info("{:<12}{} for {}", "Format:", macho_type_to_str(magic), macho_cpu_to_str(mImage->header().cpu_type()));
-
     _buildSymbolCache();
-    _relocateReadonlyData();
 }
 
 uintptr_t MachO::getEndOfSections() const {
@@ -118,35 +109,6 @@ LIEF::MachO::Symbol* MachO::lookupSymbol(uintptr_t pVAddr) {
 LIEF::MachO::Symbol* MachO::lookupSymbol(const std::string& pName) {
     if (mSymbolCache.mFromName.contains(pName)) return mSymbolCache.mFromName.at(pName);
     return nullptr;
-}
-
-#include <magic_enum.hpp>
-void MachO::_relocateReadonlyData() {
-    if (!mImage->has_section("__const")) return;
-
-    const auto EOS = getEndOfSections();
-
-    if (auto dyldInfo = mImage->dyld_info()) {
-        for (auto& bind : dyldInfo->bindings()) {
-            auto address = bind.address();
-            if (!bind.has_symbol()) continue;
-            auto name = bind.symbol()->name();
-            spdlog::warn("{:#x} {} {:#x} {:#x}", address, bind.symbol()->name(), bind.symbol()->value(), bind.addend());
-        }
-    }
-#ifdef DEBUG_DUMP_SECTION
-    std::ofstream d_Dumper("relro.fixed.dump", std::ios::binary | std::ios::trunc);
-    if (d_Dumper.is_open()) {
-        move(begin, Begin);
-        while (cur() < end) {
-            auto data = read<unsigned char>();
-            d_Dumper.write((char*)&data, sizeof(data));
-        }
-        d_Dumper.close();
-    } else {
-        spdlog::error("Failed to open file!");
-    }
-#endif
 }
 
 void MachO::_buildSymbolCache() {

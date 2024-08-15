@@ -25,7 +25,6 @@ public:
     LIEF::MachO::Binary* getImage() const override { return mImage.get(); }
 
 private:
-    void _relocateReadonlyData();
     void _buildSymbolCache();
 
     struct SymbolCache {
