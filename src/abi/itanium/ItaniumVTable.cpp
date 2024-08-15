@@ -17,8 +17,8 @@ JSON VTable::toJson() const {
         });
     }
     return JSON{
-        {"sub_tables", subTables                                   },
-        {"type_name",  mTypeName.has_value() ? *mTypeName : nullptr}
+        {"sub_tables", subTables                                        },
+        {"type_name",  mTypeName.has_value() ? JSON(*mTypeName) : JSON{}}
     };
 }
 

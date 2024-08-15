@@ -77,7 +77,7 @@ void ELF::_relocateReadonlyData() {
 
     for (auto& relocation : mImage->dynamic_relocations()) {
         auto address = relocation.address();
-        if (isInSection(address, ".data.rel.ro")) continue;
+        if (!isInSection(address, ".data.rel.ro")) continue;
         auto offset = address - getGapInFront(address);
         auto type   = relocation.type();
         using RELOC = LIEF::ELF::Relocation::TYPE;
@@ -116,7 +116,7 @@ void ELF::_relocateReadonlyData() {
             break;
         }
         default:
-            spdlog::warn("Unhandled relocation type: {}.", (uint32_t)type);
+            spdlog::warn("Unhandled relocation type: {:#x}.", (uint32_t)type);
             break;
         }
     }

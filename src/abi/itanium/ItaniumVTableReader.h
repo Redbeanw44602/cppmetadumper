@@ -51,6 +51,7 @@ private:
     struct FormatConstants {
         std::string SEGMENT_TEXT;
         std::string SEGMENT_DATA;
+        std::string SEGMENT_READONLY_DATA;
         std::string PREFIX_VTABLE;
         std::string PREFIX_TYPEINFO;
         std::string SYM_CLASS_INFO;

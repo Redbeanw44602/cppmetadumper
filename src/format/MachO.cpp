@@ -114,6 +114,10 @@ LIEF::MachO::Symbol* MachO::lookupSymbol(const std::string& pName) {
 void MachO::_buildSymbolCache() {
     if (!mIsValid) return;
 
+    if (!mImage->has_section("__symtab")) {
+        spdlog::warn("__symtab not found in this image!");
+    }
+
     for (auto& symbol : mImage->symbols()) {
         mSymbolCache.mFromName.try_emplace(symbol.name(), &symbol);
         mSymbolCache.mFromValue.try_emplace(symbol.value(), &symbol);

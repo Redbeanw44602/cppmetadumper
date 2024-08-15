@@ -20,25 +20,27 @@ ItaniumVTableReader::ItaniumVTableReader(const std::shared_ptr<Executable>& imag
 
 void ItaniumVTableReader::_initFormatConstants() {
     if (dynamic_cast<format::ELF*>(mImage.get())) {
-        _constant.SEGMENT_DATA       = ".data.rel.ro";
-        _constant.SEGMENT_TEXT       = ".text";
-        _constant.PREFIX_VTABLE      = "_ZTV";
-        _constant.PREFIX_TYPEINFO    = "_ZTI";
-        _constant.SYM_CLASS_INFO     = "_ZTVN10__cxxabiv117__class_type_infoE";
-        _constant.SYM_SI_CLASS_INFO  = "_ZTVN10__cxxabiv120__si_class_type_infoE";
-        _constant.SYM_VMI_CLASS_INFO = "_ZTVN10__cxxabiv121__vmi_class_type_infoE";
-        _constant.SYM_PURE_VFN       = "__cxa_pure_virtual";
+        _constant.SEGMENT_DATA          = ".data.rel.ro";
+        _constant.SEGMENT_READONLY_DATA = ".rodata";
+        _constant.SEGMENT_TEXT          = ".text";
+        _constant.PREFIX_VTABLE         = "_ZTV";
+        _constant.PREFIX_TYPEINFO       = "_ZTI";
+        _constant.SYM_CLASS_INFO        = "_ZTVN10__cxxabiv117__class_type_infoE";
+        _constant.SYM_SI_CLASS_INFO     = "_ZTVN10__cxxabiv120__si_class_type_infoE";
+        _constant.SYM_VMI_CLASS_INFO    = "_ZTVN10__cxxabiv121__vmi_class_type_infoE";
+        _constant.SYM_PURE_VFN          = "__cxa_pure_virtual";
         return;
     }
     if (dynamic_cast<format::MachO*>(mImage.get())) {
-        _constant.SEGMENT_DATA       = "__const";
-        _constant.SEGMENT_TEXT       = "__text";
-        _constant.PREFIX_VTABLE      = "_ZTV"; // internal
-        _constant.PREFIX_TYPEINFO    = "_ZTI";
-        _constant.SYM_CLASS_INFO     = "__ZTVN10__cxxabiv117__class_type_infoE";
-        _constant.SYM_SI_CLASS_INFO  = "__ZTVN10__cxxabiv120__si_class_type_infoE";
-        _constant.SYM_VMI_CLASS_INFO = "__ZTVN10__cxxabiv121__vmi_class_type_infoE";
-        _constant.SYM_PURE_VFN       = "___cxa_pure_virtual";
+        _constant.SEGMENT_DATA          = "__const";
+        _constant.SEGMENT_READONLY_DATA = "__const";
+        _constant.SEGMENT_TEXT          = "__text";
+        _constant.PREFIX_VTABLE         = "_ZTV"; // internal
+        _constant.PREFIX_TYPEINFO       = "_ZTI";
+        _constant.SYM_CLASS_INFO        = "__ZTVN10__cxxabiv117__class_type_infoE";
+        _constant.SYM_SI_CLASS_INFO     = "__ZTVN10__cxxabiv120__si_class_type_infoE";
+        _constant.SYM_VMI_CLASS_INFO    = "__ZTVN10__cxxabiv121__vmi_class_type_infoE";
+        _constant.SYM_PURE_VFN          = "___cxa_pure_virtual";
         return;
     }
 }
@@ -93,7 +95,7 @@ DumpVFTableResult ItaniumVTableReader::dumpVFTable() {
 std::string ItaniumVTableReader::_readZTS() {
     auto value = mImage->read<intptr_t>();
     // spdlog::debug("\tReading ZTS at {:#x}", value);
-    if (!mImage->isInSection(value, _constant.SEGMENT_DATA)) return {};
+    if (!mImage->isInSection(value, _constant.SEGMENT_READONLY_DATA)) return {};
     auto str = mImage->readCString(value, 2048);
     return str.empty() ? str : _constant.PREFIX_TYPEINFO + str;
 }
@@ -147,15 +149,15 @@ std::optional<VTable> ItaniumVTableReader::readVTable() {
                 }
                 // read: TypeInfo
                 type = _readZTI();
-                if (!type.starts_with(_constant.PREFIX_TYPEINFO)) {
-                    spdlog::warn(
-                        "Failed to reading vtable at {:#x} in {}. [INVALID_TYPEINFO]",
-                        mImage->last(),
-                        symbol.has_value() ? *symbol : "<unknown>"
-                    );
-                    return std::nullopt;
-                }
                 if (!type.empty()) {
+                    if (!type.starts_with(_constant.PREFIX_TYPEINFO)) {
+                        spdlog::warn(
+                            "Failed to reading vtable at {:#x} in {}. [INVALID_TYPEINFO]",
+                            mImage->last(),
+                            symbol.has_value() ? *symbol : "<unknown>"
+                        );
+                        return std::nullopt;
+                    }
                     if (!symbol) symbol = _constant.PREFIX_VTABLE + StringRemovePrefix(type, _constant.PREFIX_TYPEINFO);
                     result.mTypeName = type;
                 }
