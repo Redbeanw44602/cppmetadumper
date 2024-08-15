@@ -26,7 +26,6 @@ The resulting will be saved in JSON format.
  - Export RTTI perfectly.
 
 ## TODOs
- - [ ] Mach-O support.
  - [ ] PE support.
  - [ ] Virtual inheritance support.
 
