@@ -17,13 +17,10 @@ public:
 
     [[nodiscard]] uintptr_t getEndOfSections() const override;
     [[nodiscard]] size_t    getGapInFront(uintptr_t pVAddr) const override;
-    [[nodiscard]] bool      isInSection(uintptr_t pVAddr, const std::string& pSecName) const override;
 
     // lief's get_symbol is very slow!
     LIEF::ELF::Symbol* lookupSymbol(uintptr_t pVAddr) override;
     LIEF::ELF::Symbol* lookupSymbol(const std::string& pName) override;
-
-    bool moveToSection(const std::string& pName) override;
 
     LIEF::ELF::Binary* getImage() const override { return mImage.get(); }
 

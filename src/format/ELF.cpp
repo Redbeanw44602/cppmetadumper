@@ -54,11 +54,6 @@ size_t ELF::getGapInFront(uintptr_t pVAddr) const {
     throw std::runtime_error("An exception occurred during gap calculation!");
 }
 
-bool ELF::isInSection(uintptr_t pVAddr, const std::string& pSecName) const {
-    auto section = mImage->get_section(pSecName);
-    return section && section->virtual_address() <= pVAddr && (section->virtual_address() + section->size()) > pVAddr;
-}
-
 LIEF::ELF::Symbol* ELF::lookupSymbol(uintptr_t pVAddr) {
     if (mSymbolCache.mFromValue.contains(pVAddr)) return mSymbolCache.mFromValue.at(pVAddr);
     if (mDynSymbolCache.mFromValue.contains(pVAddr)) return mDynSymbolCache.mFromValue.at(pVAddr);
@@ -71,32 +66,19 @@ LIEF::ELF::Symbol* ELF::lookupSymbol(const std::string& pName) {
     return nullptr;
 }
 
-bool ELF::moveToSection(const std::string& pName) {
-    auto section = mImage->get_section(pName);
-    return section && move(section->virtual_address(), Begin);
-}
-
 void ELF::_relocateReadonlyData() {
     // Reference:
     // https://github.com/ARM-software/abi-aa/releases/download/2023Q1/aaelf64.pdf
     // https://refspecs.linuxfoundation.org/elf/elf.pdf
 
-    LIEF::ELF::Section* roData;
-    if (!(roData = mImage->get_section(".data.rel.ro"))) {
-        return;
-    }
+    if (!mImage->has_section(".data.rel.ro")) return;
 
-    const auto begin      = roData->virtual_address();
-    const auto end        = begin + roData->size();
-    const auto EOS        = getEndOfSections();
-    const auto gapInFront = getGapInFront(begin);
+    const auto EOS = getEndOfSections();
 
     for (auto& relocation : mImage->dynamic_relocations()) {
         auto address = relocation.address();
-        if (address < begin || address > end) {
-            continue;
-        }
-        auto offset = address - gapInFront;
+        if (isInSection(address, ".data.rel.ro")) continue;
+        auto offset = address - getGapInFront(address);
         auto type   = relocation.type();
         using RELOC = LIEF::ELF::Relocation::TYPE;
         switch (type) {

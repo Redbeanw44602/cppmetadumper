@@ -3,8 +3,13 @@
 //
 
 #include "MachO.h"
+#include <LIEF/MachO/Relocation.hpp>
+#include <LIEF/MachO/RelocationDyld.hpp>
 
-#include <LIEF/MachO/enums.hpp>
+// #define DEBUG_DUMP_SECTION
+#ifdef DEBUG_DUMP_SECTION
+#include <fstream>
+#endif
 
 // magic_enum is out-of-range.
 
@@ -105,11 +110,6 @@ size_t MachO::getGapInFront(uintptr_t pVAddr) const {
     throw std::runtime_error("An exception occurred during gap calculation!");
 }
 
-bool MachO::isInSection(uintptr_t pVAddr, const std::string& pSecName) const {
-    auto section = mImage->get_section(pSecName);
-    return section && section->virtual_address() <= pVAddr && (section->virtual_address() + section->size()) > pVAddr;
-}
-
 LIEF::MachO::Symbol* MachO::lookupSymbol(uintptr_t pVAddr) {
     if (mSymbolCache.mFromValue.contains(pVAddr)) return mSymbolCache.mFromValue.at(pVAddr);
     return nullptr;
@@ -120,13 +120,33 @@ LIEF::MachO::Symbol* MachO::lookupSymbol(const std::string& pName) {
     return nullptr;
 }
 
-bool MachO::moveToSection(const std::string& pName) {
-    auto section = mImage->get_section(pName);
-    return section && move(section->virtual_address(), Begin);
-}
-
+#include <magic_enum.hpp>
 void MachO::_relocateReadonlyData() {
-    // TODO.
+    if (!mImage->has_section("__const")) return;
+
+    const auto EOS = getEndOfSections();
+
+    if (auto dyldInfo = mImage->dyld_info()) {
+        for (auto& bind : dyldInfo->bindings()) {
+            auto address = bind.address();
+            if (!bind.has_symbol()) continue;
+            auto name = bind.symbol()->name();
+            spdlog::warn("{:#x} {} {:#x} {:#x}", address, bind.symbol()->name(), bind.symbol()->value(), bind.addend());
+        }
+    }
+#ifdef DEBUG_DUMP_SECTION
+    std::ofstream d_Dumper("relro.fixed.dump", std::ios::binary | std::ios::trunc);
+    if (d_Dumper.is_open()) {
+        move(begin, Begin);
+        while (cur() < end) {
+            auto data = read<unsigned char>();
+            d_Dumper.write((char*)&data, sizeof(data));
+        }
+        d_Dumper.close();
+    } else {
+        spdlog::error("Failed to open file!");
+    }
+#endif
 }
 
 void MachO::_buildSymbolCache() {

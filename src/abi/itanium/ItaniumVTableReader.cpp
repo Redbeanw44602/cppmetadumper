@@ -57,26 +57,26 @@ DumpVFTableResult ItaniumVTableReader::dumpVFTable() {
     }
 
     // Dump without symbol table:
-    if (!mImage->moveToSection(_constant._segment_data)) {
-        spdlog::error("Unable to find data section.");
-        return result;
-    }
 
-    while (mImage->isInSection(mImage->cur(), _constant._segment_data)) {
-        auto backAddr = mImage->cur();
-        auto expect1  = mImage->read<intptr_t>();
-        auto expect2  = mImage->read<intptr_t>();
-        auto expect3  = mImage->read<intptr_t>();
-        mImage->move(backAddr, Begin);
-        if (expect1 == 0 && (expect2 == 0 || mPrepared.mTypeInfoBegins.contains(expect2))
-            && mImage->isInSection(expect3, _constant._segment_text)) {
-            auto vt = readVTable();
-            if (vt) {
-                result.mVFTable.emplace_back(*vt);
-                result.mParsed++;
+    for (auto& section : mImage->getImage()->sections()) {
+        if (section.name() != _constant._segment_data) continue;
+        mImage->move(section.virtual_address(), Begin);
+        while (mImage->isInSection(mImage->cur(), _constant._segment_data)) {
+            auto backAddr = mImage->cur();
+            auto expect1  = mImage->read<intptr_t>();
+            auto expect2  = mImage->read<intptr_t>();
+            auto expect3  = mImage->read<intptr_t>();
+            mImage->move(backAddr, Begin);
+            if (expect1 == 0 && (expect2 == 0 || mPrepared.mTypeInfoBegins.contains(expect2))
+                && mImage->isInSection(expect3, _constant._segment_text)) {
+                auto vt = readVTable();
+                if (vt) {
+                    result.mVFTable.emplace_back(*vt);
+                    result.mParsed++;
+                }
+            } else {
+                mImage->move(sizeof(intptr_t));
             }
-        } else {
-            mImage->move(sizeof(intptr_t));
         }
     }
 
