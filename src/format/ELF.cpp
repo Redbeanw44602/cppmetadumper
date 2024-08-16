@@ -66,6 +66,10 @@ LIEF::ELF::Symbol* ELF::lookupSymbol(const std::string& pName) {
     return nullptr;
 }
 
+size_t ELF::getDynSymbolIndex(const std::string& pName) {
+    return mDynSymbolIndexCache.contains(pName) ? mDynSymbolIndexCache.at(pName) : 0;
+}
+
 void ELF::_relocateReadonlyData() {
     // Reference:
     // https://github.com/ARM-software/abi-aa/releases/download/2023Q1/aaelf64.pdf
@@ -94,7 +98,7 @@ void ELF::_relocateReadonlyData() {
                     // fixme: Deviations may occur, although this does not affect data export.
                     write<uintptr_t, false>(
                         offset,
-                        EOS + mImage->dynsym_idx(*symbol) * sizeof(intptr_t) + relocation.addend()
+                        EOS + getDynSymbolIndex(symbol->name()) * sizeof(intptr_t) + relocation.addend()
                     );
                 }
             } else {
@@ -148,12 +152,15 @@ void ELF::_buildSymbolCache() {
     }
 
     if (mImage->has(LIEF::ELF::Section::TYPE::DYNSYM)) {
+        auto idx = 0;
         for (auto& symbol : mImage->dynamic_symbols()) {
+            mDynSymbolIndexCache.try_emplace(symbol.name(), idx);
             mDynSymbolCache.mFromName.try_emplace(symbol.name(), &symbol);
             mDynSymbolCache.mFromValue.try_emplace(
-                getEndOfSections() + sizeof(intptr_t) * mImage->dynsym_idx(symbol),
+                getEndOfSections() + sizeof(intptr_t) * getDynSymbolIndex(symbol.name()),
                 &symbol
             );
+            idx++;
         }
     } else {
         spdlog::warn(".dynsym not found in this image!");

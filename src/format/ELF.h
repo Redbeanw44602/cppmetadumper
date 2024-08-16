@@ -2,12 +2,18 @@
 // Created by RedbeanW on 2024/2/4.
 //
 
+// Don't use LIEF low performance method:
+// * get_symbol() -> use ELF::lookupSymbol() instead
+// * dynsym_idx() -> use ELF::getDynSymbolIndex() instead
+
 #pragma once
 
 #include "base/Base.h"
 #include "base/Executable.h"
 
 #include <LIEF/ELF.hpp>
+
+//
 
 METADUMPER_FORMAT_BEGIN
 
@@ -18,9 +24,10 @@ public:
     [[nodiscard]] uintptr_t getEndOfSections() const override;
     [[nodiscard]] size_t    getGapInFront(uintptr_t pVAddr) const override;
 
-    // lief's get_symbol is very slow!
     LIEF::ELF::Symbol* lookupSymbol(uintptr_t pVAddr) override;
     LIEF::ELF::Symbol* lookupSymbol(const std::string& pName) override;
+
+    size_t getDynSymbolIndex(const std::string& pName);
 
     LIEF::ELF::Binary* getImage() const override { return mImage.get(); }
 
@@ -37,6 +44,8 @@ private:
 
     SymbolCache mSymbolCache;
     SymbolCache mDynSymbolCache;
+
+    std::unordered_map<std::string, size_t> mDynSymbolIndexCache;
 };
 
 METADUMPER_FORMAT_END
