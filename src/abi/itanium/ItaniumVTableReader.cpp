@@ -158,7 +158,8 @@ std::optional<VTable> ItaniumVTableReader::readVTable() {
                         );
                         return std::nullopt;
                     }
-                    if (!symbol) symbol = _constant.PREFIX_VTABLE + StringRemovePrefix(type, _constant.PREFIX_TYPEINFO);
+                    if (!symbol)
+                        symbol = _constant.PREFIX_VTABLE + util::string::remove_prefix(type, _constant.PREFIX_TYPEINFO);
                     result.mTypeName = type;
                 }
             } else {                   // value < 0, multi-inherited, is sub table,
