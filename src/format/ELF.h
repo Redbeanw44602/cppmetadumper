@@ -1,19 +1,13 @@
-//
-// Created by RedbeanW on 2024/2/4.
-//
-
-// Don't use LIEF low performance method:
-// * get_symbol() -> use ELF::lookupSymbol() instead
-// * dynsym_idx() -> use ELF::getDynSymbolIndex() instead
-
 #pragma once
 
 #include "base/Base.h"
 #include "base/Executable.h"
 
-#include <LIEF/ELF.hpp>
+// Don't use LIEF low performance method:
+// * get_symbol() -> use ELF::lookupSymbol() instead
+// * dynsym_idx() -> use ELF::getDynSymbolIndex() instead
 
-//
+#include <LIEF/ELF.hpp>
 
 METADUMPER_FORMAT_BEGIN
 

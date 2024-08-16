@@ -1,7 +1,3 @@
-//
-// Created by RedbeanW on 2024/1/19.
-//
-
 #include "Loader.h"
 
 #include <fstream>

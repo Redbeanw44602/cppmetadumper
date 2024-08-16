@@ -1,7 +1,3 @@
-//
-// Created by RedbeanW on 2024/2/4.
-//
-
 #pragma once
 
 #include "base/Base.h"

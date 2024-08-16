@@ -1,7 +1,3 @@
-//
-// Created by RedbeanW on 2024/1/19.
-//
-
 #pragma once
 
 #include "ItaniumVTable.h"

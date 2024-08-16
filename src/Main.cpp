@@ -1,7 +1,3 @@
-//
-// Created by RedbeanW on 2023/7/27.
-//
-
 #include "base/Base.h"
 
 #include <argparse/argparse.hpp>

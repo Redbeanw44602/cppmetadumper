@@ -1,7 +1,3 @@
-//
-// Created by RedbeanW on 2024/2/4.
-//
-
 #include "MachO.h"
 
 // magic_enum is out-of-range.
