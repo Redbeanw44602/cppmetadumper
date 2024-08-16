@@ -7,6 +7,9 @@
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
+#define MAGIC_ENUM_RANGE_MIN 0
+#define MAGIC_ENUM_RANGE_MAX 1024
+
 // clang-format off
 
 #define METADUMPER_BEGIN namespace metadumper {
